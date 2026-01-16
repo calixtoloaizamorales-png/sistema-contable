@@ -1,155 +1,163 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json  # <--- ESTA LIBRERÍA ES VITAL PARA EL TRUCO DEL SECRETO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Sistema Contable Web", layout="wide")
+st.set_page_config(page_title="Sistema Contable Cloud", layout="wide")
 
-# --- GESTIÓN DE USUARIOS (SEGURIDAD) ---
-USUARIOS = {
-    "admin": "admin123",
-    "contador": "conta2026",
-    "gerente": "pronades"
-}
+# --- CONEXIÓN CON GOOGLE SHEETS ---
+def conectar_google_sheet():
+    try:
+        # Definir el alcance (permisos)
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        
+        # Cargar credenciales desde los Secretos de Streamlit (Usando el truco del texto JSON)
+        # OJO: Aquí buscamos la clave 'contenido_json' dentro de 'gcp_service_account'
+        json_texto = st.secrets["gcp_service_account"]["contenido_json"]
+        
+        # Convertir ese texto largo en un diccionario real
+        creds_dict = json.loads(json_texto)
+        
+        # Crear las credenciales
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        
+        # Autorizar cliente y abrir hoja
+        client = gspread.authorize(creds)
+        sheet = client.open("Base_Datos_Contabilidad").sheet1
+        return sheet
+        
+    except Exception as e:
+        st.error(f"❌ Error CRÍTICO de Conexión: {e}")
+        st.info("Revisa: 1. Que el secreto en Streamlit empiece con [gcp_service_account] y tenga la clave contenido_json. 2. Que hayas compartido la hoja con el email del robot.")
+        return None
+
+# --- FUNCIONES DE DATOS ---
+def cargar_datos():
+    sheet = conectar_google_sheet()
+    if sheet:
+        try:
+            data = sheet.get_all_records()
+            if not data:
+                return pd.DataFrame(columns=['Fecha', 'Documento', 'Tercero', 'Cuenta', 'Descripcion', 'Debito', 'Credito', 'Centro_Costo', 'Unidad_Negocio', 'Usuario_Registro'])
+            return pd.DataFrame(data)
+        except Exception as e:
+            st.error(f"Error leyendo datos: {e}")
+    return pd.DataFrame()
+
+def guardar_registro(fila_datos):
+    sheet = conectar_google_sheet()
+    if sheet:
+        try:
+            valores = [
+                str(fila_datos['Fecha']),
+                str(fila_datos['Documento']),
+                str(fila_datos['Tercero']),
+                str(fila_datos['Cuenta']),
+                str(fila_datos['Descripcion']),
+                float(fila_datos['Debito']),
+                float(fila_datos['Credito']),
+                str(fila_datos['Centro_Costo']),
+                str(fila_datos['Unidad_Negocio']),
+                str(fila_datos['Usuario_Registro'])
+            ]
+            sheet.append_row(valores)
+            return True
+        except Exception as e:
+            st.error(f"No se pudo escribir en la hoja: {e}")
+            return False
+    return False
+
+# --- SEGURIDAD ---
+USUARIOS = {"admin": "admin123", "contador": "conta2026", "gerente": "pronades"}
 
 def login():
     if 'usuario_actual' not in st.session_state:
         st.session_state.usuario_actual = None
-
     if st.session_state.usuario_actual is None:
-        st.header("🔐 Iniciar Sesión - Pronades SAS")
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            # Agregamos key para evitar conflicto
-            user = st.text_input("Usuario", key="login_user")
-            password = st.text_input("Contraseña", type="password", key="login_pass")
-            if st.button("Entrar", key="login_btn"):
-                if user in USUARIOS and USUARIOS[user] == password:
-                    st.session_state.usuario_actual = user
-                    st.success("Acceso concedido")
-                    st.rerun()
-                else:
-                    st.error("Usuario o contraseña incorrectos")
+        st.header("🔐 Iniciar Sesión - Cloud")
+        c1, c2 = st.columns([1,2])
+        u = c1.text_input("Usuario", key="log_u")
+        p = c1.text_input("Contraseña", type="password", key="log_p")
+        if c1.button("Entrar"):
+            if u in USUARIOS and USUARIOS[u] == p:
+                st.session_state.usuario_actual = u
+                st.rerun()
+            else:
+                st.error("Acceso denegado")
         return False
     return True
 
 if not login():
     st.stop()
 
-# --- MENÚ LATERAL ---
-st.sidebar.success(f"👤 Usuario: {st.session_state.usuario_actual.upper()}")
-if st.sidebar.button("Cerrar Sesión", key="logout_btn"):
+st.sidebar.info(f"Conectado como: {st.session_state.usuario_actual}")
+if st.sidebar.button("Salir"):
     st.session_state.usuario_actual = None
     st.rerun()
 
-# --- LOGICA DEL SISTEMA ---
-ARCHIVO_DB = 'contabilidad_db.csv'
+# --- INTERFAZ ---
+PUC_BASE = ["1105 - Caja", "1110 - Bancos", "1305 - Clientes", "2365 - Retefuente", "2408 - IVA", "4135 - Ventas", "5195 - Gastos", "5295 - Diversos"]
+LISTAS = {
+    "terceros": ["Varios", "DIAN", "Banco"],
+    "cc": ["General", "Ventas", "Producción"],
+    "un": ["General", "Ganadería", "Agricultura"]
+}
 
-# PUC BASE
-PUC_BASE = [
-    "1105 - Caja General", "1110 - Bancos", "1305 - Clientes Nacionales",
-    "1355 - Anticipo Impuestos", "2205 - Proveedores", "2335 - Cuentas por Pagar",
-    "2365 - Retención Fuente", "2408 - IVA por Pagar", "4135 - Ventas",
-    "5105 - Gastos Personal", "5135 - Servicios", "5195 - Diversos", 
-    "5200 - Ventas"
-]
+st.title("☁️ Sistema Contable (Conectado a Drive)")
+menu = st.sidebar.radio("Menú", ["Registrar", "Ver Datos"], key="menu_nav")
 
-def cargar_datos():
-    if os.path.exists(ARCHIVO_DB):
-        df = pd.read_csv(ARCHIVO_DB)
-        return df
-    return pd.DataFrame(columns=['Fecha', 'Documento', 'Tercero', 'Cuenta', 'Descripcion', 'Debito', 'Credito', 'Centro_Costo', 'Unidad_Negocio', 'Usuario_Registro'])
-
-def guardar_datos(df):
-    df.to_csv(ARCHIVO_DB, index=False)
-
-def cargar_listas():
-    if 'config_listas' not in st.session_state:
-        st.session_state['config_listas'] = {
-            "centros_costo": ["General", "Administración", "Ventas", "Producción"],
-            "unidades_negocio": ["General", "Ganadería", "Agricultura", "Servicios"],
-            "terceros": ["Consumidor Final", "DIAN", "Banco"],
-            "cuentas_puc": PUC_BASE
-        }
-    return st.session_state['config_listas']
-
-# --- INTERFAZ PRINCIPAL ---
-st.title(f"📊 Panel de Control - {st.session_state.usuario_actual.capitalize()}")
-menu = st.sidebar.radio("Navegación", ["📝 Registrar Asiento", "⚙️ Maestros", "📈 Reportes"], key="nav_menu")
-listas = cargar_listas()
-
-# SECCIÓN: MAESTROS
-if menu == "⚙️ Maestros":
-    st.header("Gestión de Maestros")
-    tab1, tab2 = st.tabs(["📚 PUC", "👥 Terceros"])
+if menu == "Registrar":
+    st.subheader("Nuevo Movimiento")
     
-    with tab1:
-        nueva = st.text_input("Nueva Cuenta", key="input_nueva_cuenta")
-        if st.button("Agregar Cuenta", key="btn_add_cuenta"):
-            listas['cuentas_puc'].append(nueva)
-            st.success("Cuenta agregada")
-        st.write(listas['cuentas_puc'])
-        
-    with tab2:
-        nuevo_t = st.text_input("Nuevo Tercero", key="input_nuevo_tercero")
-        if st.button("Agregar Tercero", key="btn_add_tercero"):
-            listas['terceros'].append(nuevo_t)
-            st.success("Tercero Agregado")
-
-# SECCIÓN: REGISTRAR ASIENTO
-elif menu == "📝 Registrar Asiento":
-    st.subheader("Nuevo Comprobante Contable")
-    
-    # Cabecera
+    # Formulario
     c1, c2, c3 = st.columns(3)
-    # AQUÍ ESTABA EL ERROR: Agregamos key única
-    fecha = c1.date_input("Fecha", datetime.now(), key="fecha_asiento_input")
-    tercero = c2.selectbox("Tercero", listas['terceros'], key="tercero_asiento_input")
-    doc = c3.text_input("Doc Ref", key="doc_asiento_input")
-    desc = st.text_input("Descripción Global", key="desc_asiento_input")
+    fecha = c1.date_input("Fecha")
+    tercero = c2.selectbox("Tercero", LISTAS['terceros'])
+    doc = c3.text_input("Doc Ref")
+    
+    with st.form("form_linea"):
+        col_A, col_B = st.columns(2)
+        cuenta = col_A.selectbox("Cuenta", PUC_BASE)
+        desc = col_B.text_input("Descripción")
+        
+        col_C, col_D = st.columns(2)
+        deb = col_C.number_input("Débito", min_value=0.0, step=1000.0)
+        cred = col_D.number_input("Crédito", min_value=0.0, step=1000.0)
+        
+        col_E, col_F = st.columns(2)
+        cc = col_E.selectbox("Centro Costo", LISTAS['cc'])
+        un = col_F.selectbox("Unidad Negocio", LISTAS['un'])
+        
+        enviar = st.form_submit_button("💾 Registrar en la Nube")
+        
+        if enviar:
+            if deb == 0 and cred == 0:
+                st.warning("El valor no puede ser cero")
+            else:
+                datos = {
+                    'Fecha': fecha, 'Documento': doc, 'Tercero': tercero,
+                    'Cuenta': cuenta, 'Descripcion': desc,
+                    'Debito': deb, 'Credito': cred,
+                    'Centro_Costo': cc, 'Unidad_Negocio': un,
+                    'Usuario_Registro': st.session_state.usuario_actual
+                }
+                with st.spinner("Guardando en Google Drive..."):
+                    if guardar_registro(datos):
+                        st.success("✅ ¡Guardado EXITOSAMENTE!")
 
-    if 'df_asiento' not in st.session_state:
-        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': '1105 - Caja General', 'Descripcion': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': 'General', 'Unidad_Negocio': 'General'}])
-
-    # Configuración de la tabla editable
-    col_cfg = {
-        "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=listas['cuentas_puc'], required=True),
-        "Centro_Costo": st.column_config.SelectboxColumn("CC", options=listas['centros_costo']),
-        "Unidad_Negocio": st.column_config.SelectboxColumn("UN", options=listas['unidades_negocio']),
-        "Debito": st.column_config.NumberColumn("Débito", format="$%.2f"),
-        "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f")
-    }
-
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="editor_grid_asiento")
-
-    # Cálculos y Validación
-    deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
-    st.metric("Diferencia (Debe ser $0)", f"${deb - cred:,.2f}")
-
-    if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 Guardar Comprobante", type="primary", key="btn_guardar_asiento"):
-            final = edited.copy()
-            final['Fecha'] = fecha
-            final['Tercero'] = tercero
-            final['Documento'] = doc
-            final['Descripcion'] = final['Descripcion'].replace('', desc)
-            final['Usuario_Registro'] = st.session_state.usuario_actual
-            
-            # Guardar
-            guardar_datos(pd.concat([cargar_datos(), final], ignore_index=True))
-            st.success("✅ Guardado exitosamente")
-            
-            # Limpiar tabla
-            st.session_state.df_asiento = pd.DataFrame([{'Cuenta': '1105 - Caja General', 'Descripcion': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': 'General', 'Unidad_Negocio': 'General'}])
-            st.rerun()
-    elif round(deb - cred, 2) != 0:
-        st.error("⚠️ El asiento está descuadrado. No se puede guardar.")
-
-# SECCIÓN: REPORTES
-elif menu == "📈 Reportes":
-    st.subheader("Movimientos Registrados")
+elif menu == "Ver Datos":
+    if st.button("🔄 Actualizar"):
+        st.cache_data.clear()
+        st.rerun()
+    
     df = cargar_datos()
-    st.dataframe(df, use_container_width=True)
     if not df.empty:
-        st.download_button("Descargar CSV", df.to_csv(index=False), "contabilidad.csv", key="btn_download")
+        st.dataframe(df)
+        t_deb = pd.to_numeric(df['Debito']).sum()
+        t_cred = pd.to_numeric(df['Credito']).sum()
+        st.info(f"Débitos: ${t_deb:,.2f} | Créditos: ${t_cred:,.2f} | Diferencia: ${t_deb - t_cred:,.2f}")
+    else:
+        st.warning("No hay datos o no hay conexión.")
