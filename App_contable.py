@@ -26,7 +26,7 @@ CENTROS = ["General", "Administración", "Ventas", "Operativo"]
 UNIDADES = ["General", "Ganadería Cría", "Ganadería Ceba", "Agricultura"]
 
 # ==========================================
-# 🔌 CONEXIÓN MULTI-HOJA
+# 🔌 CONEXIÓN
 # ==========================================
 def conectar_google(nombre_hoja):
     try:
@@ -39,7 +39,7 @@ def conectar_google(nombre_hoja):
         
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        # Abre el archivo y selecciona la hoja específica
+        # IMPORTANTE: Asegúrate de que tu hoja en Drive se llame "Base_Datos_Contabilidad"
         sheet = client.open("Base_Datos_Contabilidad").worksheet(nombre_hoja)
         return sheet
     except Exception as e:
@@ -63,9 +63,10 @@ if 'usuario_actual' not in st.session_state:
 
 if st.session_state.usuario_actual is None:
     st.title("🔐 ERP Pronades - Acceso")
-    u = st.text_input("Usuario")
-    p = st.text_input("Contraseña", type="password")
-    if st.button("Entrar"):
+    c1, c2 = st.columns([1,2])
+    u = c1.text_input("Usuario")
+    p = c1.text_input("Contraseña", type="password")
+    if c1.button("Entrar"):
         if u in USUARIOS and USUARIOS[u] == p:
             st.session_state.usuario_actual = u
             st.rerun()
@@ -83,12 +84,11 @@ menu = st.sidebar.radio("Navegación",
     ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes e Impuestos", "📂 Ver Movimientos"])
 
 # ==========================================
-# 👥 GESTIÓN DE TERCEROS (NUEVO)
+# 👥 TERCEROS
 # ==========================================
 if menu == "👥 Gestión Terceros":
     st.title("Directorio de Terceros")
     
-    # Formulario para crear tercero
     with st.expander("➕ Registrar Nuevo Tercero", expanded=False):
         with st.form("nuevo_tercero"):
             c1, c2 = st.columns(2)
@@ -102,29 +102,38 @@ if menu == "👥 Gestión Terceros":
                 sheet = conectar_google("Terceros")
                 if sheet:
                     sheet.append_row([str(nit), razon, dir, tel, tipo])
-                    st.success(f"Tercero {razon} guardado.")
+                    st.success(f"✅ Tercero {razon} guardado correctamente.")
                     st.cache_data.clear()
                     st.rerun()
 
-    # Mostrar listado
     df_terceros = cargar_df("Terceros")
     if not df_terceros.empty:
         st.dataframe(df_terceros, use_container_width=True)
     else:
-        st.info("No hay terceros creados. Crea el primero arriba.")
+        st.info("No hay terceros creados.")
 
 # ==========================================
-# 📝 NUEVO ASIENTO (CONECTADO A TERCEROS)
+# 📝 NUEVO ASIENTO (CON VISUALIZACIÓN)
 # ==========================================
 elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
-    
-    # Cargar terceros para el selectbox
+
+    # --- ZONA DE CONFIRMACIÓN VISUAL (LO NUEVO) ---
+    if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
+        st.success("✅ ¡Asiento guardado exitosamente!")
+        st.markdown("**Resumen de lo que acabas de guardar:**")
+        st.dataframe(st.session_state.ultimo_registro, use_container_width=True)
+        if st.button("Cerrar Confirmación"):
+            st.session_state.ultimo_registro = None
+            st.rerun()
+        st.markdown("---")
+
+    # --- FORMULARIO DE ENTRADA ---
+    # Cargar terceros
     df_t = cargar_df("Terceros")
     if df_t.empty:
-        lista_terceros = ["Consumidor Final (Crear terceros en menú)"]
+        lista_terceros = ["Consumidor Final"]
     else:
-        # Crea una lista combinando NIT y Nombre
         lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist()
 
     c1, c2, c3 = st.columns(3)
@@ -133,23 +142,22 @@ elif menu == "📝 Nuevo Asiento":
     doc = c3.text_input("Documento", placeholder="Ej: FC-100")
     desc_global = st.text_input("Descripción Global")
 
-    st.markdown("---")
-
-    # Tabla Editable (Reset si es necesario)
+    # Tabla Editable
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
     col_cfg = {
         "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
+        "Detalle": st.column_config.TextColumn("Detalle (Opcional)", width="medium"),
         "Debito": st.column_config.NumberColumn("Débito", format="$%.2f"),
         "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f"),
         "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS),
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v5")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v6")
 
-    # Validaciones y Guardado
+    # Validaciones
     edited = edited.fillna(0.0)
     deb = edited['Debito'].sum()
     cred = edited['Credito'].sum()
@@ -158,92 +166,86 @@ elif menu == "📝 Nuevo Asiento":
     c1.metric("Débito", f"${deb:,.2f}")
     c2.metric("Crédito", f"${cred:,.2f}")
     
+    # BOTÓN GUARDAR
     if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 GUARDAR ASIENTO", type="primary"):
-            sheet = conectar_google("Hoja 1") # OJO: Nombre de tu hoja de movimientos
+        if st.button("💾 GUARDAR ASIENTO", type="primary", use_container_width=True):
+            sheet = conectar_google("Hoja 1") # OJO: Revisa que tu hoja de movimientos se llame así
             if sheet:
                 lote = []
+                datos_visuales = [] # Para mostrar en pantalla
+                
                 for idx, row in edited.iterrows():
                     d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
                     c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
+                    
                     if d_val > 0 or c_val > 0:
-                        lote.append([
+                        fila = [
                             str(fecha), str(doc), str(tercero), str(row['Cuenta']),
                             str(row['Detalle'] if row['Detalle'] else desc_global),
                             d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
                             str(st.session_state.usuario_actual)
-                        ])
-                sheet.append_rows(lote)
-                st.success("Guardado Exitosamente")
-                st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
-                st.rerun()
+                        ]
+                        lote.append(fila)
+                        # Creamos un diccionario para la tabla visual de confirmación
+                        datos_visuales.append({
+                            'Cuenta': row['Cuenta'], 'Detalle': row['Detalle'], 
+                            'Debito': d_val, 'Credito': c_val, 'Tercero': tercero
+                        })
+
+                # Enviamos a la nube
+                try:
+                    sheet.append_rows(lote)
+                    # Guardamos los datos en memoria para mostrarlos tras el recargo
+                    st.session_state.ultimo_registro = pd.DataFrame(datos_visuales)
+                    # Limpiamos formulario
+                    st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error guardando: {e}")
+
     elif round(deb - cred, 2) != 0:
         st.error(f"❌ Descuadrado por ${deb - cred:,.2f}")
 
 # ==========================================
-# 📊 REPORTES E IMPUESTOS
+# 📊 REPORTES
 # ==========================================
 elif menu == "📊 Reportes e Impuestos":
     st.title("Estados Financieros")
-    if st.button("🔄 Actualizar"):
+    if st.button("🔄 Actualizar Datos"):
         st.cache_data.clear()
         st.rerun()
         
     df = cargar_df("Hoja 1")
     if not df.empty:
-        # Convertir a numeros
         df['Debito'] = pd.to_numeric(df['Debito'])
         df['Credito'] = pd.to_numeric(df['Credito'])
         
-        tab1, tab2, tab3 = st.tabs(["💰 PyG (Resultados)", "🏛️ Impuestos", "📈 Por Unidad"])
-        
+        tab1, tab2 = st.tabs(["💰 PyG", "🏛️ Impuestos"])
         with tab1:
-            st.subheader("Estado de Resultados (Aprox)")
-            # Filtramos cuentas 4, 5, 6
             pyg = df[df['Cuenta'].astype(str).str.startswith(('4','5','6'))].copy()
             if not pyg.empty:
                 resumen = pyg.groupby("Cuenta")[["Debito", "Credito"]].sum()
-                resumen['Saldo'] = resumen['Credito'] - resumen['Debito'] # Ingreso naturaleza Credito
-                st.dataframe(resumen)
-                
-                utilidad = resumen['Saldo'].sum()
-                st.metric("Utilidad/Pérdida Neta", f"${utilidad:,.2f}")
+                resumen['Saldo'] = resumen['Credito'] - resumen['Debito']
+                st.dataframe(resumen, use_container_width=True)
+                st.metric("Resultado Neto", f"${resumen['Saldo'].sum():,.2f}")
             else:
-                st.info("No hay datos de resultados.")
-
+                st.info("Sin datos.")
         with tab2:
-            st.subheader("Balance de Impuestos (Retenciones e IVA)")
             imp = df[df['Cuenta'].astype(str).str.startswith(('23','24'))].copy()
             if not imp.empty:
                 resumen_imp = imp.groupby("Cuenta")[["Debito", "Credito"]].sum()
                 resumen_imp['A Pagar'] = resumen_imp['Credito'] - resumen_imp['Debito']
-                st.dataframe(resumen_imp)
+                st.dataframe(resumen_imp, use_container_width=True)
             else:
-                st.info("No hay datos de impuestos.")
-                
-        with tab3:
-            st.subheader("Rentabilidad por Unidad")
-            # Ingresos - Gastos por Unidad
-            ingresos = df[df['Cuenta'].str.startswith('4')].groupby("Unidad_Negocio")['Credito'].sum()
-            gastos = df[df['Cuenta'].str.startswith(('5','6'))].groupby("Unidad_Negocio")['Debito'].sum()
-            
-            balance_un = pd.DataFrame({'Ingresos': ingresos, 'Gastos': gastos}).fillna(0)
-            balance_un['Utilidad'] = balance_un['Ingresos'] - balance_un['Gastos']
-            st.dataframe(balance_un)
-            st.bar_chart(balance_un['Utilidad'])
+                st.info("Sin datos.")
 
 # ==========================================
-# 📂 VER Y EDITAR
+# 📂 VER MOVIMIENTOS
 # ==========================================
 elif menu == "📂 Ver Movimientos":
-    st.title("Histórico de Movimientos")
-    st.info("ℹ️ Para **EDITAR** o **ELIMINAR** un asiento, por seguridad debes hacerlo directamente en Google Sheets.")
-    st.markdown("[Abrir Google Sheets](https://docs.google.com/spreadsheets/)")
-    
-    if st.button("Actualizar Lista"):
+    st.title("Histórico")
+    st.markdown("[Editar en Google Sheets](https://docs.google.com/spreadsheets/)")
+    if st.button("Actualizar"):
         st.cache_data.clear()
         st.rerun()
-        
-    df = cargar_df("Hoja 1")
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
+    st.dataframe(cargar_df("Hoja 1"), use_container_width=True)
