@@ -4,41 +4,31 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
-import numpy as np # Importante para detectar los NaN
+import numpy as np
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Sistema Contable Pronades", layout="wide", page_icon="📊")
+st.set_page_config(page_title="ERP Pronades SAS", layout="wide", page_icon="📈")
 
 # ==========================================
-# ⚙️ ZONA DE CONFIGURACIÓN
+# ⚙️ CONFIGURACIÓN FIJA
 # ==========================================
-USUARIOS = {
-    "admin": "admin123",
-    "contador": "conta2026",
-    "gerente": "pronades",
-    "auxiliar": "dato1"
-}
+USUARIOS = {"admin": "admin123", "contador": "conta2026", "gerente": "pronades"}
 
 PUC = [
-    "1105 - Caja General", 
-    "1110 - Bancos", 
-    "1305 - Clientes", 
-    "2205 - Proveedores", 
-    "2365 - Retefuente", 
-    "4135 - Ingresos", 
-    "5105 - Gastos",
-    "5295 - Compras"
-    # ... (Agrega tus cuentas aquí)
+    "1105 - Caja General", "1110 - Bancos", "1305 - Clientes", 
+    "1355 - Anticipo Impuestos", "1435 - Inventario Semovientes", 
+    "1540 - Flota y Equipo", "2205 - Proveedores", "2335 - Ctas x Pagar", 
+    "2365 - Retefuente", "2408 - IVA Generado", "2409 - IVA Descontable",
+    "3115 - Aportes Sociales", "4135 - Ingresos Ventas", 
+    "5105 - Gastos Personal", "5135 - Servicios", "5195 - Diversos",
+    "5295 - Compra Ganado", "6135 - Costo Ventas"
 ]
-
-CENTROS_COSTO = ["General", "Administración", "Ventas", "Operativo"]
-UNIDADES_NEGOCIO = ["General", "Ganadería", "Agricultura", "Servicios"]
-TERCEROS = ["Consumidor Final", "DIAN", "Banco", "Varios"]
+CENTROS = ["General", "Administración", "Ventas", "Operativo"]
+UNIDADES = ["General", "Ganadería Cría", "Ganadería Ceba", "Agricultura"]
 
 # ==========================================
-# 🔌 CONEXIÓN GOOGLE
+# 🔌 CONEXIÓN MULTI-HOJA
 # ==========================================
-def conectar_google_sheet():
+def conectar_google(nombre_hoja):
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         json_texto = st.secrets["gcp_service_account"]["contenido_json"]
@@ -49,176 +39,211 @@ def conectar_google_sheet():
         
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        sheet = client.open("Base_Datos_Contabilidad").sheet1
+        # Abre el archivo y selecciona la hoja específica
+        sheet = client.open("Base_Datos_Contabilidad").worksheet(nombre_hoja)
         return sheet
     except Exception as e:
-        st.error(f"❌ Error de conexión: {e}")
         return None
 
-def cargar_datos():
-    sheet = conectar_google_sheet()
+def cargar_df(nombre_hoja):
+    sheet = conectar_google(nombre_hoja)
     if sheet:
         try:
             data = sheet.get_all_records()
-            if not data:
-                return pd.DataFrame(columns=['Fecha', 'Documento', 'Tercero', 'Cuenta', 'Descripcion', 'Debito', 'Credito', 'Centro_Costo', 'Unidad_Negocio', 'Usuario_Registro'])
-            return pd.DataFrame(data)
+            return pd.DataFrame(data) if data else pd.DataFrame()
         except:
             return pd.DataFrame()
     return pd.DataFrame()
 
-def guardar_lote(lista_datos):
-    sheet = conectar_google_sheet()
-    if sheet:
-        try:
-            filas_preparadas = []
-            for d in lista_datos:
-                # AQUÍ ESTÁ LA CORRECCIÓN DEL ERROR "NaN"
-                # Si el valor no es un número válido, ponemos 0.0
-                deb = 0.0 if pd.isna(d['Debito']) else float(d['Debito'])
-                cred = 0.0 if pd.isna(d['Credito']) else float(d['Credito'])
-                
-                filas_preparadas.append([
-                    str(d['Fecha']), str(d['Documento']), str(d['Tercero']),
-                    str(d['Cuenta']), str(d['Descripcion']),
-                    deb, cred,  # Usamos las variables limpias
-                    str(d['Centro_Costo']), str(d['Unidad_Negocio']),
-                    str(d['Usuario_Registro'])
-                ])
-            sheet.append_rows(filas_preparadas)
-            return True
-        except Exception as e:
-            st.error(f"Error guardando lote: {e}")
-            return False
-    return False
-
 # ==========================================
 # 🔐 LOGIN
 # ==========================================
-def login():
-    if 'usuario_actual' not in st.session_state:
-        st.session_state.usuario_actual = None
-    if st.session_state.usuario_actual is None:
-        st.title("🔐 Acceso")
-        c1, c2 = st.columns([1,2])
-        u = c1.text_input("Usuario")
-        p = c1.text_input("Contraseña", type="password")
-        if c1.button("Ingresar"):
-            if u in USUARIOS and USUARIOS[u] == p:
-                st.session_state.usuario_actual = u
-                st.rerun()
-        return False
-    return True
+if 'usuario_actual' not in st.session_state:
+    st.session_state.usuario_actual = None
 
-if not login():
+if st.session_state.usuario_actual is None:
+    st.title("🔐 ERP Pronades - Acceso")
+    u = st.text_input("Usuario")
+    p = st.text_input("Contraseña", type="password")
+    if st.button("Entrar"):
+        if u in USUARIOS and USUARIOS[u] == p:
+            st.session_state.usuario_actual = u
+            st.rerun()
     st.stop()
 
 # ==========================================
-# 🖥️ INTERFAZ PRINCIPAL
+# 🖥️ MENÚ PRINCIPAL
 # ==========================================
-st.sidebar.success(f"👤 {st.session_state.usuario_actual}")
+st.sidebar.title(f"👤 {st.session_state.usuario_actual}")
 if st.sidebar.button("Salir"):
     st.session_state.usuario_actual = None
     st.rerun()
 
-menu = st.sidebar.radio("Menú", ["📝 Nuevo Asiento", "📂 Ver Movimientos", "⚙️ Configuración"])
+menu = st.sidebar.radio("Navegación", 
+    ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes e Impuestos", "📂 Ver Movimientos"])
 
-if menu == "📝 Nuevo Asiento":
+# ==========================================
+# 👥 GESTIÓN DE TERCEROS (NUEVO)
+# ==========================================
+if menu == "👥 Gestión Terceros":
+    st.title("Directorio de Terceros")
+    
+    # Formulario para crear tercero
+    with st.expander("➕ Registrar Nuevo Tercero", expanded=False):
+        with st.form("nuevo_tercero"):
+            c1, c2 = st.columns(2)
+            nit = c1.text_input("NIT / Cédula")
+            razon = c2.text_input("Razón Social / Nombre")
+            dir = c1.text_input("Dirección")
+            tel = c2.text_input("Teléfono")
+            tipo = st.selectbox("Tipo", ["Cliente", "Proveedor", "Empleado", "Otro"])
+            
+            if st.form_submit_button("Guardar Tercero"):
+                sheet = conectar_google("Terceros")
+                if sheet:
+                    sheet.append_row([str(nit), razon, dir, tel, tipo])
+                    st.success(f"Tercero {razon} guardado.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    # Mostrar listado
+    df_terceros = cargar_df("Terceros")
+    if not df_terceros.empty:
+        st.dataframe(df_terceros, use_container_width=True)
+    else:
+        st.info("No hay terceros creados. Crea el primero arriba.")
+
+# ==========================================
+# 📝 NUEVO ASIENTO (CONECTADO A TERCEROS)
+# ==========================================
+elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
     
-    # Cabecera
+    # Cargar terceros para el selectbox
+    df_t = cargar_df("Terceros")
+    if df_t.empty:
+        lista_terceros = ["Consumidor Final (Crear terceros en menú)"]
+    else:
+        # Crea una lista combinando NIT y Nombre
+        lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist()
+
     c1, c2, c3 = st.columns(3)
     fecha = c1.date_input("Fecha", datetime.now())
-    tercero = c2.selectbox("Tercero", TERCEROS)
-    doc = c3.text_input("Documento", placeholder="Ej: FC-001")
+    tercero = c2.selectbox("Tercero", lista_terceros)
+    doc = c3.text_input("Documento", placeholder="Ej: FC-100")
     desc_global = st.text_input("Descripción Global")
 
     st.markdown("---")
 
-    # --- LÓGICA DE REPARACIÓN DE TABLA ---
-    # Si la tabla en memoria está dañada o le faltan columnas viejas, la reseteamos
-    columnas_necesarias = ['Cuenta', 'Detalle', 'Debito', 'Credito', 'Centro_Costo', 'Unidad_Negocio']
-    
+    # Tabla Editable (Reset si es necesario)
     if 'df_asiento' not in st.session_state:
-        resetear = True
-    else:
-        # Verificar si falta alguna columna
-        faltantes = [c for c in columnas_necesarias if c not in st.session_state.df_asiento.columns]
-        resetear = len(faltantes) > 0
-    
-    if resetear:
-        st.session_state.df_asiento = pd.DataFrame([{
-            'Cuenta': PUC[0], 
-            'Detalle': '', 
-            'Debito': 0.0, 
-            'Credito': 0.0, 
-            'Centro_Costo': CENTROS_COSTO[0], 
-            'Unidad_Negocio': UNIDADES_NEGOCIO[0]
-        }])
+        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
-    # Configuración de Columnas
     col_cfg = {
-        "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, required=True, width="large"),
-        "Detalle": st.column_config.TextColumn("Detalle", width="medium"),
-        "Debito": st.column_config.NumberColumn("Débito", min_value=0.0, format="$%.2f"),
-        "Credito": st.column_config.NumberColumn("Crédito", min_value=0.0, format="$%.2f"),
-        "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS_COSTO, required=True),
-        "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES_NEGOCIO, required=True),
+        "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
+        "Debito": st.column_config.NumberColumn("Débito", format="$%.2f"),
+        "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f"),
+        "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS),
+        "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    # Tabla Editable
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v4")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v5")
 
-    # Cálculos (Con protección contra NaN)
-    df_calc = edited.fillna(0.0) # Convertir vacíos a ceros para calcular
-    deb = df_calc['Debito'].sum()
-    cred = df_calc['Credito'].sum()
-    dif = deb - cred
-
+    # Validaciones y Guardado
+    edited = edited.fillna(0.0)
+    deb = edited['Debito'].sum()
+    cred = edited['Credito'].sum()
+    
     c1, c2, c3 = st.columns(3)
     c1.metric("Débito", f"${deb:,.2f}")
     c2.metric("Crédito", f"${cred:,.2f}")
     
-    if round(dif, 2) == 0:
-        c3.success("✅ Balanceado")
-        if deb > 0:
-            if st.button("💾 GUARDAR", type="primary", use_container_width=True):
-                with st.spinner("Guardando..."):
-                    # Preparamos datos
-                    lote = []
-                    for idx, row in edited.iterrows():
-                        # Limpieza individual de cada fila
-                        d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
-                        c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
-                        
-                        if d_val > 0 or c_val > 0:
-                            lote.append({
-                                'Fecha': fecha, 'Documento': doc, 'Tercero': tercero,
-                                'Cuenta': row['Cuenta'],
-                                'Descripcion': row['Detalle'] if row['Detalle'] else desc_global,
-                                'Debito': d_val, 'Credito': c_val,
-                                'Centro_Costo': row['Centro_Costo'],
-                                'Unidad_Negocio': row['Unidad_Negocio'],
-                                'Usuario_Registro': st.session_state.usuario_actual
-                            })
-                    
-                    if guardar_lote(lote):
-                        st.success("Guardado Exitosamente")
-                        # Reset tabla
-                        st.session_state.df_asiento = pd.DataFrame([{
-                            'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 
-                            'Centro_Costo': CENTROS_COSTO[0], 'Unidad_Negocio': UNIDADES_NEGOCIO[0]
-                        }])
-                        st.rerun()
-    else:
-        c3.error(f"❌ Diferencia: ${dif:,.2f}")
+    if round(deb - cred, 2) == 0 and deb > 0:
+        if st.button("💾 GUARDAR ASIENTO", type="primary"):
+            sheet = conectar_google("Hoja 1") # OJO: Nombre de tu hoja de movimientos
+            if sheet:
+                lote = []
+                for idx, row in edited.iterrows():
+                    d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
+                    c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
+                    if d_val > 0 or c_val > 0:
+                        lote.append([
+                            str(fecha), str(doc), str(tercero), str(row['Cuenta']),
+                            str(row['Detalle'] if row['Detalle'] else desc_global),
+                            d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
+                            str(st.session_state.usuario_actual)
+                        ])
+                sheet.append_rows(lote)
+                st.success("Guardado Exitosamente")
+                st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+                st.rerun()
+    elif round(deb - cred, 2) != 0:
+        st.error(f"❌ Descuadrado por ${deb - cred:,.2f}")
 
-elif menu == "📂 Ver Movimientos":
-    st.header("Movimientos")
-    if st.button("Actualizar"):
+# ==========================================
+# 📊 REPORTES E IMPUESTOS
+# ==========================================
+elif menu == "📊 Reportes e Impuestos":
+    st.title("Estados Financieros")
+    if st.button("🔄 Actualizar"):
         st.cache_data.clear()
         st.rerun()
-    st.dataframe(cargar_datos(), use_container_width=True)
+        
+    df = cargar_df("Hoja 1")
+    if not df.empty:
+        # Convertir a numeros
+        df['Debito'] = pd.to_numeric(df['Debito'])
+        df['Credito'] = pd.to_numeric(df['Credito'])
+        
+        tab1, tab2, tab3 = st.tabs(["💰 PyG (Resultados)", "🏛️ Impuestos", "📈 Por Unidad"])
+        
+        with tab1:
+            st.subheader("Estado de Resultados (Aprox)")
+            # Filtramos cuentas 4, 5, 6
+            pyg = df[df['Cuenta'].astype(str).str.startswith(('4','5','6'))].copy()
+            if not pyg.empty:
+                resumen = pyg.groupby("Cuenta")[["Debito", "Credito"]].sum()
+                resumen['Saldo'] = resumen['Credito'] - resumen['Debito'] # Ingreso naturaleza Credito
+                st.dataframe(resumen)
+                
+                utilidad = resumen['Saldo'].sum()
+                st.metric("Utilidad/Pérdida Neta", f"${utilidad:,.2f}")
+            else:
+                st.info("No hay datos de resultados.")
 
-elif menu == "⚙️ Configuración":
-    st.write("Edita las listas en GitHub para cambiar Usuarios o PUC.")
+        with tab2:
+            st.subheader("Balance de Impuestos (Retenciones e IVA)")
+            imp = df[df['Cuenta'].astype(str).str.startswith(('23','24'))].copy()
+            if not imp.empty:
+                resumen_imp = imp.groupby("Cuenta")[["Debito", "Credito"]].sum()
+                resumen_imp['A Pagar'] = resumen_imp['Credito'] - resumen_imp['Debito']
+                st.dataframe(resumen_imp)
+            else:
+                st.info("No hay datos de impuestos.")
+                
+        with tab3:
+            st.subheader("Rentabilidad por Unidad")
+            # Ingresos - Gastos por Unidad
+            ingresos = df[df['Cuenta'].str.startswith('4')].groupby("Unidad_Negocio")['Credito'].sum()
+            gastos = df[df['Cuenta'].str.startswith(('5','6'))].groupby("Unidad_Negocio")['Debito'].sum()
+            
+            balance_un = pd.DataFrame({'Ingresos': ingresos, 'Gastos': gastos}).fillna(0)
+            balance_un['Utilidad'] = balance_un['Ingresos'] - balance_un['Gastos']
+            st.dataframe(balance_un)
+            st.bar_chart(balance_un['Utilidad'])
+
+# ==========================================
+# 📂 VER Y EDITAR
+# ==========================================
+elif menu == "📂 Ver Movimientos":
+    st.title("Histórico de Movimientos")
+    st.info("ℹ️ Para **EDITAR** o **ELIMINAR** un asiento, por seguridad debes hacerlo directamente en Google Sheets.")
+    st.markdown("[Abrir Google Sheets](https://docs.google.com/spreadsheets/)")
+    
+    if st.button("Actualizar Lista"):
+        st.cache_data.clear()
+        st.rerun()
+        
+    df = cargar_df("Hoja 1")
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
