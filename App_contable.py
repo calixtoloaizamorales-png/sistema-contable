@@ -9,9 +9,9 @@ import numpy as np
 st.set_page_config(page_title="ERP Pronades SAS", layout="wide", page_icon="📈")
 
 # ==========================================
-# ⚙️ CONFIGURACIÓN FIJA
+# ⚙️ CONFIGURACIÓN DE LISTAS (MAESTROS)
 # ==========================================
-USUARIOS = {"admin": "admin123", "contador": "conta2026", "gerente": "pronades"}
+# NOTA: Los USUARIOS ya no están aquí, están en los Secrets por seguridad.
 
 PUC = [
     "1105 - Caja General", "1110 - Bancos", "1305 - Clientes", 
@@ -39,7 +39,6 @@ def conectar_google(nombre_hoja):
         
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        # IMPORTANTE: Asegúrate de que tu hoja en Drive se llame "Base_Datos_Contabilidad"
         sheet = client.open("Base_Datos_Contabilidad").worksheet(nombre_hoja)
         return sheet
     except Exception as e:
@@ -56,20 +55,32 @@ def cargar_df(nombre_hoja):
     return pd.DataFrame()
 
 # ==========================================
-# 🔐 LOGIN
+# 🔐 LOGIN (AHORA LEE DESDE SECRETS)
 # ==========================================
 if 'usuario_actual' not in st.session_state:
     st.session_state.usuario_actual = None
 
 if st.session_state.usuario_actual is None:
-    st.title("🔐 ERP Pronades - Acceso")
+    st.title("🔐 ERP Pronades - Acceso Seguro")
+    
+    # Cargamos usuarios desde la bóveda secreta
+    try:
+        usuarios_secretos = st.secrets["usuarios"]
+    except:
+        st.error("❌ Error de configuración: No se encontraron usuarios en Secrets.")
+        st.stop()
+
     c1, c2 = st.columns([1,2])
     u = c1.text_input("Usuario")
     p = c1.text_input("Contraseña", type="password")
+    
     if c1.button("Entrar"):
-        if u in USUARIOS and USUARIOS[u] == p:
+        # Verificamos contra la lista secreta
+        if u in usuarios_secretos and usuarios_secretos[u] == p:
             st.session_state.usuario_actual = u
             st.rerun()
+        else:
+            st.error("❌ Acceso Denegado")
     st.stop()
 
 # ==========================================
@@ -88,7 +99,6 @@ menu = st.sidebar.radio("Navegación",
 # ==========================================
 if menu == "👥 Gestión Terceros":
     st.title("Directorio de Terceros")
-    
     with st.expander("➕ Registrar Nuevo Tercero", expanded=False):
         with st.form("nuevo_tercero"):
             c1, c2 = st.columns(2)
@@ -102,10 +112,9 @@ if menu == "👥 Gestión Terceros":
                 sheet = conectar_google("Terceros")
                 if sheet:
                     sheet.append_row([str(nit), razon, dir, tel, tipo])
-                    st.success(f"✅ Tercero {razon} guardado correctamente.")
+                    st.success(f"✅ Tercero {razon} guardado.")
                     st.cache_data.clear()
                     st.rerun()
-
     df_terceros = cargar_df("Terceros")
     if not df_terceros.empty:
         st.dataframe(df_terceros, use_container_width=True)
@@ -113,28 +122,22 @@ if menu == "👥 Gestión Terceros":
         st.info("No hay terceros creados.")
 
 # ==========================================
-# 📝 NUEVO ASIENTO (CON VISUALIZACIÓN)
+# 📝 NUEVO ASIENTO
 # ==========================================
 elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
-    # --- ZONA DE CONFIRMACIÓN VISUAL (LO NUEVO) ---
     if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
         st.success("✅ ¡Asiento guardado exitosamente!")
-        st.markdown("**Resumen de lo que acabas de guardar:**")
+        st.markdown("**Resumen guardado:**")
         st.dataframe(st.session_state.ultimo_registro, use_container_width=True)
         if st.button("Cerrar Confirmación"):
             st.session_state.ultimo_registro = None
             st.rerun()
         st.markdown("---")
 
-    # --- FORMULARIO DE ENTRADA ---
-    # Cargar terceros
     df_t = cargar_df("Terceros")
-    if df_t.empty:
-        lista_terceros = ["Consumidor Final"]
-    else:
-        lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist()
+    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist() if not df_t.empty else ["Consumidor Final"]
 
     c1, c2, c3 = st.columns(3)
     fecha = c1.date_input("Fecha", datetime.now())
@@ -142,67 +145,50 @@ elif menu == "📝 Nuevo Asiento":
     doc = c3.text_input("Documento", placeholder="Ej: FC-100")
     desc_global = st.text_input("Descripción Global")
 
-    # Tabla Editable
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
     col_cfg = {
         "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
-        "Detalle": st.column_config.TextColumn("Detalle (Opcional)", width="medium"),
+        "Detalle": st.column_config.TextColumn("Detalle", width="medium"),
         "Debito": st.column_config.NumberColumn("Débito", format="$%.2f"),
         "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f"),
         "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS),
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v6")
-
-    # Validaciones
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v7")
     edited = edited.fillna(0.0)
-    deb = edited['Debito'].sum()
-    cred = edited['Credito'].sum()
+    deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
     c1, c2, c3 = st.columns(3)
     c1.metric("Débito", f"${deb:,.2f}")
     c2.metric("Crédito", f"${cred:,.2f}")
     
-    # BOTÓN GUARDAR
     if round(deb - cred, 2) == 0 and deb > 0:
         if st.button("💾 GUARDAR ASIENTO", type="primary", use_container_width=True):
-            sheet = conectar_google("Hoja 1") # OJO: Revisa que tu hoja de movimientos se llame así
+            sheet = conectar_google("Hoja 1")
             if sheet:
                 lote = []
-                datos_visuales = [] # Para mostrar en pantalla
-                
+                vis = []
                 for idx, row in edited.iterrows():
                     d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
                     c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
-                    
                     if d_val > 0 or c_val > 0:
-                        fila = [
+                        lote.append([
                             str(fecha), str(doc), str(tercero), str(row['Cuenta']),
                             str(row['Detalle'] if row['Detalle'] else desc_global),
                             d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
                             str(st.session_state.usuario_actual)
-                        ]
-                        lote.append(fila)
-                        # Creamos un diccionario para la tabla visual de confirmación
-                        datos_visuales.append({
-                            'Cuenta': row['Cuenta'], 'Detalle': row['Detalle'], 
-                            'Debito': d_val, 'Credito': c_val, 'Tercero': tercero
-                        })
-
-                # Enviamos a la nube
+                        ])
+                        vis.append({'Cuenta': row['Cuenta'], 'Detalle': row['Detalle'], 'Debito': d_val, 'Credito': c_val})
                 try:
                     sheet.append_rows(lote)
-                    # Guardamos los datos en memoria para mostrarlos tras el recargo
-                    st.session_state.ultimo_registro = pd.DataFrame(datos_visuales)
-                    # Limpiamos formulario
+                    st.session_state.ultimo_registro = pd.DataFrame(vis)
                     st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error guardando: {e}")
-
+                    st.error(f"Error: {e}")
     elif round(deb - cred, 2) != 0:
         st.error(f"❌ Descuadrado por ${deb - cred:,.2f}")
 
@@ -211,15 +197,13 @@ elif menu == "📝 Nuevo Asiento":
 # ==========================================
 elif menu == "📊 Reportes e Impuestos":
     st.title("Estados Financieros")
-    if st.button("🔄 Actualizar Datos"):
+    if st.button("🔄 Actualizar"):
         st.cache_data.clear()
         st.rerun()
-        
     df = cargar_df("Hoja 1")
     if not df.empty:
         df['Debito'] = pd.to_numeric(df['Debito'])
         df['Credito'] = pd.to_numeric(df['Credito'])
-        
         tab1, tab2 = st.tabs(["💰 PyG", "🏛️ Impuestos"])
         with tab1:
             pyg = df[df['Cuenta'].astype(str).str.startswith(('4','5','6'))].copy()
