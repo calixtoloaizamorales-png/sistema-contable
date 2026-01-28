@@ -126,9 +126,10 @@ PUC = [
 "38100401 - Terrenos"  ,	
 "38100801 - Construcciones y Edificaciones"  ,	
 "38103201 - Flota y Equipo de Transporte"  ,	
-"41350601 - "  ,	
-"41350602 - "  ,	
-"41350801 - "  ,	
+"41350601 - Arrendamientos"  ,	
+"41350602 - Club"  ,	
+"41350603 - Hacienda"  ,
+"41350801 - Otros"  ,
 "42100501 - Intereses"  ,	
 "42102001 - Diferencia en cambio"  ,	
 "42104001 - Descuentos comerciales condicionados"  ,	
@@ -568,5 +569,6 @@ elif menu == "📂 Ver Movimientos":
         st.cache_data.clear()
         st.rerun()
     st.dataframe(cargar_df("Hoja 1"), use_container_width=True)
+
 
 
