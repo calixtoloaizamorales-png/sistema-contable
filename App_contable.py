@@ -342,8 +342,23 @@ PUC = [
 "72953001 - Utiles, papelería y fotocopias"  ,	
 
 ]
-CENTROS = ["General", "Administración", "Ventas", "Operativo"]
-UNIDADES = ["General", "Ganadería Cría", "Ganadería Ceba", "Agricultura"]
+CENTROS = ["Club", "Apt1", "Apt2", "Apt3", "Obras Civiles", "Hacienda","JD"]
+UNIDADES = ["Pesebreras", "Estimulacion Equinoterapia", "Volting", "adiestramiento", "Salto Equestre", "Salto Equestre","Olimpa ",
+"Shalon ",
+"Max ",
+"Leal ",
+"Maxima ",
+"Achita ",
+"Misterio ",
+"Gamin ",
+"Nativo ",
+"Valiente ",
+"Neptuno&Lucky ",
+"Colina ",
+"Tagua ",
+"Vampiro ",
+"Don Juan y Joshua",
+]
 
 # ==========================================
 # 🔌 CONEXIÓN
@@ -553,4 +568,5 @@ elif menu == "📂 Ver Movimientos":
         st.cache_data.clear()
         st.rerun()
     st.dataframe(cargar_df("Hoja 1"), use_container_width=True)
+
 
