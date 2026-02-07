@@ -390,17 +390,14 @@ def cargar_df(nombre_hoja):
     return pd.DataFrame()
 
 def obtener_siguiente_consecutivo():
-    """Busca el número más alto en la columna ID_Comprobante y suma 1"""
     df = cargar_df("Hoja 1")
     if df.empty or 'ID_Comprobante' not in df.columns:
         return 1
     else:
         try:
-            # Convertimos a numero forzando errores a NaN
             serie = pd.to_numeric(df['ID_Comprobante'], errors='coerce')
             maximo = serie.max()
-            if pd.isna(maximo):
-                return 1
+            if pd.isna(maximo): return 1
             return int(maximo) + 1
         except:
             return 1
@@ -443,32 +440,115 @@ menu = st.sidebar.radio("Navegación",
     ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes", "📂 Histórico"])
 
 # ==========================================
-# 📝 NUEVO ASIENTO (CON CONSECUTIVO)
+# 👥 TERCEROS (SEPARADO Y DESPLEGABLE)
 # ==========================================
-if menu == "📝 Nuevo Asiento":
+if menu == "👥 Gestión Terceros":
+    st.title("Directorio de Terceros")
+    
+    with st.expander("➕ Crear Nuevo Tercero", expanded=True):
+        # 1. LISTA DESPLEGABLE (Lo que pediste)
+        tipo_persona = st.selectbox("Tipo de Persona", ["Natural", "Jurídica"])
+        
+        with st.form("form_tercero"):
+            c1, c2, c3 = st.columns([2, 1, 2])
+            nit = c1.text_input("NIT / Cédula (Sin puntos)")
+            dv = c2.text_input("DV", max_chars=1)
+            tipo_tercero = c3.selectbox("Clasificación", ["Cliente", "Proveedor", "Empleado", "Socio", "Otro"])
+
+            # Variables para guardar
+            razon_social = ""
+            nom1, nom2, ape1, ape2 = "", "", "", ""
+            nombre_visual = ""
+            
+            if tipo_persona == "Jurídica":
+                razon_social = st.text_input("Razón Social (Nombre Empresa)")
+                nombre_visual = razon_social
+            else:
+                st.markdown("**Nombres y Apellidos Separados:**")
+                n1, n2 = st.columns(2)
+                nom1 = n1.text_input("Primer Nombre")
+                nom2 = n2.text_input("Segundo Nombre (Opcional)")
+                a1, a2 = st.columns(2)
+                ape1 = a1.text_input("Primer Apellido")
+                ape2 = a2.text_input("Segundo Apellido (Opcional)")
+                
+                # Armamos el nombre visual para mostrar en la app
+                parts = [p for p in [nom1, nom2, ape1, ape2] if p]
+                nombre_visual = " ".join(parts)
+
+            st.markdown("---")
+            c4, c5 = st.columns(2)
+            direccion = c4.text_input("Dirección")
+            ciudad = c5.text_input("Ciudad / Municipio")
+            
+            c6, c7 = st.columns(2)
+            telefono = c6.text_input("Teléfono")
+            email = c7.text_input("Email")
+            
+            if st.form_submit_button("Guardar Tercero"):
+                if not nit:
+                    st.error("El NIT es obligatorio")
+                else:
+                    sheet = conectar_google("Terceros")
+                    if sheet:
+                        # Guardamos CADA CAMPO EN SU COLUMNA
+                        datos = [
+                            str(nit), str(dv), tipo_persona, 
+                            razon_social.upper(), 
+                            nom1.upper(), nom2.upper(), ape1.upper(), ape2.upper(), # <--- Separados
+                            direccion.upper(), ciudad.upper(), 
+                            str(telefono), str(email).lower(), 
+                            tipo_tercero,
+                            nombre_visual.upper() # Columna K (Nombre_Visual)
+                        ]
+                        sheet.append_row(datos)
+                        st.success(f"✅ Tercero {nombre_visual} guardado correctamente.")
+                        st.cache_data.clear()
+                        st.rerun()
+
+    # Visualizar lista
+    st.markdown("### Base de Datos")
+    df_t = cargar_df("Terceros")
+    if not df_t.empty:
+        # Mostramos lo más importante
+        cols_mostrar = ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad']
+        # Filtramos solo columnas que existan para evitar errores si no has actualizado el sheet
+        cols_validas = [c for c in cols_mostrar if c in df_t.columns]
+        st.dataframe(df_t[cols_validas], use_container_width=True)
+    else:
+        st.info("No hay terceros registrados.")
+
+# ==========================================
+# 📝 NUEVO ASIENTO
+# ==========================================
+elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
-    # Mostrar confirmación del último guardado
     if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
-        id_guardado = st.session_state.ultimo_id
-        st.success(f"✅ ¡Comprobante #{id_guardado} guardado exitosamente!")
-        st.dataframe(st.session_state.ultimo_registro, use_container_width=True)
+        st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado!")
+        st.dataframe(st.session_state.ultimo_registro)
         if st.button("Nuevo Registro"):
             st.session_state.ultimo_registro = None
             st.rerun()
         st.markdown("---")
 
-    # Formulario
+    # Cargar terceros
     df_t = cargar_df("Terceros")
-    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist() if not df_t.empty else ["Generico"]
+    if df_t.empty:
+        lista_terceros = ["Consumidor Final"]
+    else:
+        # Usamos la columna 'Nombre_Visual' (La última, Columna N)
+        if 'Nombre_Visual' in df_t.columns:
+            lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist()
+        else:
+            lista_terceros = df_t['NIT'].astype(str).tolist()
 
     c1, c2, c3 = st.columns(3)
     fecha = c1.date_input("Fecha", datetime.now())
     tercero = c2.selectbox("Tercero", lista_terceros)
-    doc_ref = c3.text_input("Doc. Referencia (Factura/Recibo)", placeholder="Ej: FC-123")
-    desc_global = st.text_input("Descripción Global de la Operación")
+    doc_ref = c3.text_input("Doc. Ref")
+    desc_global = st.text_input("Descripción Global")
 
-    # Grid
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
@@ -481,7 +561,7 @@ if menu == "📝 Nuevo Asiento":
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v8")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v10")
     edited = edited.fillna(0.0)
     deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
@@ -490,69 +570,42 @@ if menu == "📝 Nuevo Asiento":
     c2.metric("Crédito", f"${cred:,.2f}")
     
     if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 GUARDAR COMPROBANTE", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR", type="primary"):
             sheet = conectar_google("Hoja 1")
             if sheet:
-                with st.spinner("Generando consecutivo y guardando..."):
-                    # 1. Obtener el número automático
-                    nuevo_consecutivo = obtener_siguiente_consecutivo()
-                    
+                with st.spinner("Guardando..."):
+                    nuevo_id = obtener_siguiente_consecutivo()
                     lote = []
                     vis = []
                     for idx, row in edited.iterrows():
-                        d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
-                        c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
-                        if d_val > 0 or c_val > 0:
-                            # 2. Agregamos el nuevo_consecutivo al principio de la lista
+                        d = 0.0 if pd.isna(row['Debito']) else row['Debito']
+                        c = 0.0 if pd.isna(row['Credito']) else row['Credito']
+                        if d > 0 or c > 0:
                             lote.append([
-                                int(nuevo_consecutivo),  # <--- COLUMNA A: ID AUTOMÁTICO
-                                str(fecha), str(doc_ref), str(tercero), str(row['Cuenta']),
-                                str(row['Detalle'] if row['Detalle'] else desc_global),
-                                d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
+                                int(nuevo_id), str(fecha), str(doc_ref), str(tercero), 
+                                str(row['Cuenta']), str(row['Detalle'] if row['Detalle'] else desc_global),
+                                d, c, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
                                 str(st.session_state.usuario_actual)
                             ])
-                            vis.append({'Cuenta': row['Cuenta'], 'Debito': d_val, 'Credito': c_val})
+                            vis.append({'Cuenta': row['Cuenta'], 'Debito': d, 'Credito': c})
                     try:
                         sheet.append_rows(lote)
                         st.session_state.ultimo_registro = pd.DataFrame(vis)
-                        st.session_state.ultimo_id = nuevo_consecutivo
+                        st.session_state.ultimo_id = nuevo_id
                         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
     elif round(deb - cred, 2) != 0:
-        st.error(f"❌ Descuadrado por ${deb - cred:,.2f}")
+        st.error(f"❌ Descuadrado")
 
 # ==========================================
-# 📂 VER MOVIMIENTOS
+# 📊 REPORTES Y HISTÓRICO
 # ==========================================
 elif menu == "📂 Histórico":
-    st.title("Histórico de Comprobantes")
-    if st.button("Actualizar"):
-        st.cache_data.clear()
-        st.rerun()
-    
-    df = cargar_df("Hoja 1")
-    if not df.empty and 'ID_Comprobante' in df.columns:
-        # Ordenamos para ver el último primero
-        df = df.sort_values(by='ID_Comprobante', ascending=False)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.dataframe(df)
-
-# ==========================================
-# 👥 TERCEROS Y REPORTES (SIMPLIFICADO)
-# ==========================================
-elif menu == "👥 Gestión Terceros":
-    st.title("Terceros")
-    with st.form("nt"):
-        nit = st.text_input("NIT")
-        nom = st.text_input("Nombre")
-        if st.form_submit_button("Guardar"):
-            sh = conectar_google("Terceros")
-            sh.append_row([nit, nom, "", "", "Cliente"])
-            st.success("Guardado")
-            st.cache_data.clear()
+    st.title("Histórico")
+    if st.button("Actualizar"): st.cache_data.clear(); st.rerun()
+    st.dataframe(cargar_df("Hoja 1").sort_values(by='ID_Comprobante', ascending=False), use_container_width=True)
 
 elif menu == "📊 Reportes":
     st.title("Reportes")
@@ -562,6 +615,7 @@ elif menu == "📊 Reportes":
         df['Debito'] = pd.to_numeric(df['Debito'])
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
+        res['Saldo'] = res['Credito'] - res['Debito']
         st.dataframe(res)
 
 
