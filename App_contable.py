@@ -7,11 +7,17 @@ import json
 import numpy as np
 
 st.set_page_config(page_title="ERP Pronades SAS", layout="wide", page_icon="📈")
-
 # ==========================================
-# ⚙️ CONFIGURACIÓN DE LISTAS (MAESTROS)
+# ⚙️ CONFIGURACIÓN Y ESTILOS
 # ==========================================
-# NOTA: Los USUARIOS ya no están aquí, están en los Secrets por seguridad.
+# Inyectamos CSS para ocultar índices de tablas y mejorar visualización
+st.markdown("""
+    <style>
+    .block-container {padding-top: 1rem; padding-bottom: 5rem;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
 
 PUC = [
     "11050501 - Caja general Buga"  ,	
@@ -360,29 +366,6 @@ UNIDADES = ["Pesebreras", "Estimulacion Equinoterapia", "Volting", "adiestramien
 "Vampiro ",
 "Don Juan y Joshua",
 ]
-# ==========================================
-# ⚙️ CONFIGURACIÓN Y ESTILOS
-# ==========================================
-# Inyectamos CSS para ocultar índices de tablas y mejorar visualización
-st.markdown("""
-    <style>
-    .block-container {padding-top: 1rem; padding-bottom: 5rem;}
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
-
-PUC = [
-    "1105 - Caja General", "1110 - Bancos", "1305 - Clientes", 
-    "1355 - Anticipo Impuestos", "1435 - Inventario Semovientes", 
-    "1540 - Flota y Equipo", "2205 - Proveedores", "2335 - Ctas x Pagar", 
-    "2365 - Retefuente", "2408 - IVA Generado", "2409 - IVA Descontable",
-    "3115 - Aportes Sociales", "4135 - Ingresos Ventas", 
-    "5105 - Gastos Personal", "5135 - Servicios", "5195 - Diversos",
-    "5295 - Compra Ganado", "6135 - Costo Ventas"
-]
-CENTROS = ["General", "Administración", "Ventas", "Operativo"]
-UNIDADES = ["General", "Ganadería Cría", "Ganadería Ceba", "Agricultura"]
 
 # ==========================================
 # 🔌 CONEXIÓN
@@ -666,3 +649,4 @@ elif menu == "📊 Reportes":
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         res['Saldo'] = res['Credito'] - res['Debito']
         st.dataframe(res.style.format("${:,.2f}")) # Formato bonito en reporte
+
