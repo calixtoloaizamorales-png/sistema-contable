@@ -20,11 +20,11 @@ st.markdown("""
 # ⚙️ MAESTROS
 # ==========================================
 PUC = [
-    "11050501 - Caja general Buga"  ,	
+"11050501 - Caja general"  ,	
 "11050503 - Caja Efectivo"  ,	
-"11051001 - Caja Menor Logística"  ,	
+"11051001 - Caja Menor "  ,	
 "11100501 - Bancolombia"  ,	
-"11100503 - Banco BBVA"  ,	
+"11100503 - Banco "  ,	
 "13050501 - CxC Nacionales"  ,	
 "13300501 - Anticipo a proveedores de mercancías"  ,	
 "13309501 - Anticipo a otros"  ,	
@@ -32,11 +32,9 @@ PUC = [
 "13551504 - Ret. por Servicios en General"  ,	
 "13551506 - Ret. por Arrendamiento de Bienes Muebles"  ,	
 "13551507 - Ret. por Ventas"  ,	
-"13551510 - Ret. por Servicios de Transporte"  ,	
-"13551512 - Ret. por Ventas de petróleo y derivados"  ,	
 "13551701 - Impuesto a las Ventas Retenido"  ,	
-"13551801 - Impuesto de Industria y Comercio retenido Buga"  ,	
-"13559003 - Autorretención especial a título de renta (CREE 0.55% - antiguo 0.4%)"  ,	
+"13551801 - Impuesto de Industria y Comercio retenido"  ,	
+"13559003 - Autorretención especial a título de renta"  ,	
 "13559501 - Otros anticipos"  ,	
 "13802001 - Cuentas por cobrar de terceros"  ,	
 "14050101 - Materias primas"  ,	
@@ -649,3 +647,4 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         st.dataframe(res.style.format("${:,.2f}"))
+
