@@ -360,7 +360,6 @@ UNIDADES = ["Pesebreras", "Estimulacion Equinoterapia", "Volting", "adiestramien
 "Vampiro ",
 "Don Juan y Joshua",
 ]
-
 # ==========================================
 # 🔌 CONEXIÓN
 # ==========================================
@@ -390,20 +389,34 @@ def cargar_df(nombre_hoja):
             return pd.DataFrame()
     return pd.DataFrame()
 
+def obtener_siguiente_consecutivo():
+    """Busca el número más alto en la columna ID_Comprobante y suma 1"""
+    df = cargar_df("Hoja 1")
+    if df.empty or 'ID_Comprobante' not in df.columns:
+        return 1
+    else:
+        try:
+            # Convertimos a numero forzando errores a NaN
+            serie = pd.to_numeric(df['ID_Comprobante'], errors='coerce')
+            maximo = serie.max()
+            if pd.isna(maximo):
+                return 1
+            return int(maximo) + 1
+        except:
+            return 1
+
 # ==========================================
-# 🔐 LOGIN (AHORA LEE DESDE SECRETS)
+# 🔐 LOGIN
 # ==========================================
 if 'usuario_actual' not in st.session_state:
     st.session_state.usuario_actual = None
 
 if st.session_state.usuario_actual is None:
     st.title("🔐 ERP Pronades - Acceso Seguro")
-    
-    # Cargamos usuarios desde la bóveda secreta
     try:
         usuarios_secretos = st.secrets["usuarios"]
     except:
-        st.error("❌ Error de configuración: No se encontraron usuarios en Secrets.")
+        st.error("Configura los usuarios en Secrets.")
         st.stop()
 
     c1, c2 = st.columns([1,2])
@@ -411,16 +424,15 @@ if st.session_state.usuario_actual is None:
     p = c1.text_input("Contraseña", type="password")
     
     if c1.button("Entrar"):
-        # Verificamos contra la lista secreta
         if u in usuarios_secretos and usuarios_secretos[u] == p:
             st.session_state.usuario_actual = u
             st.rerun()
         else:
-            st.error("❌ Acceso Denegado")
+            st.error("Acceso Denegado")
     st.stop()
 
 # ==========================================
-# 🖥️ MENÚ PRINCIPAL
+# 🖥️ MENÚ
 # ==========================================
 st.sidebar.title(f"👤 {st.session_state.usuario_actual}")
 if st.sidebar.button("Salir"):
@@ -428,59 +440,35 @@ if st.sidebar.button("Salir"):
     st.rerun()
 
 menu = st.sidebar.radio("Navegación", 
-    ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes e Impuestos", "📂 Ver Movimientos"])
+    ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes", "📂 Histórico"])
 
 # ==========================================
-# 👥 TERCEROS
+# 📝 NUEVO ASIENTO (CON CONSECUTIVO)
 # ==========================================
-if menu == "👥 Gestión Terceros":
-    st.title("Directorio de Terceros")
-    with st.expander("➕ Registrar Nuevo Tercero", expanded=False):
-        with st.form("nuevo_tercero"):
-            c1, c2 = st.columns(2)
-            nit = c1.text_input("NIT / Cédula")
-            razon = c2.text_input("Razón Social / Nombre")
-            dir = c1.text_input("Dirección")
-            tel = c2.text_input("Teléfono")
-            tipo = st.selectbox("Tipo", ["Cliente", "Proveedor", "Empleado", "Otro"])
-            
-            if st.form_submit_button("Guardar Tercero"):
-                sheet = conectar_google("Terceros")
-                if sheet:
-                    sheet.append_row([str(nit), razon, dir, tel, tipo])
-                    st.success(f"✅ Tercero {razon} guardado.")
-                    st.cache_data.clear()
-                    st.rerun()
-    df_terceros = cargar_df("Terceros")
-    if not df_terceros.empty:
-        st.dataframe(df_terceros, use_container_width=True)
-    else:
-        st.info("No hay terceros creados.")
-
-# ==========================================
-# 📝 NUEVO ASIENTO
-# ==========================================
-elif menu == "📝 Nuevo Asiento":
+if menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
+    # Mostrar confirmación del último guardado
     if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
-        st.success("✅ ¡Asiento guardado exitosamente!")
-        st.markdown("**Resumen guardado:**")
+        id_guardado = st.session_state.ultimo_id
+        st.success(f"✅ ¡Comprobante #{id_guardado} guardado exitosamente!")
         st.dataframe(st.session_state.ultimo_registro, use_container_width=True)
-        if st.button("Cerrar Confirmación"):
+        if st.button("Nuevo Registro"):
             st.session_state.ultimo_registro = None
             st.rerun()
         st.markdown("---")
 
+    # Formulario
     df_t = cargar_df("Terceros")
-    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist() if not df_t.empty else ["Consumidor Final"]
+    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Razon_Social']).tolist() if not df_t.empty else ["Generico"]
 
     c1, c2, c3 = st.columns(3)
     fecha = c1.date_input("Fecha", datetime.now())
     tercero = c2.selectbox("Tercero", lista_terceros)
-    doc = c3.text_input("Documento", placeholder="Ej: FC-100")
-    desc_global = st.text_input("Descripción Global")
+    doc_ref = c3.text_input("Doc. Referencia (Factura/Recibo)", placeholder="Ej: FC-123")
+    desc_global = st.text_input("Descripción Global de la Operación")
 
+    # Grid
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
@@ -493,7 +481,7 @@ elif menu == "📝 Nuevo Asiento":
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v7")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v8")
     edited = edited.fillna(0.0)
     deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
@@ -502,73 +490,78 @@ elif menu == "📝 Nuevo Asiento":
     c2.metric("Crédito", f"${cred:,.2f}")
     
     if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 GUARDAR ASIENTO", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR COMPROBANTE", type="primary", use_container_width=True):
             sheet = conectar_google("Hoja 1")
             if sheet:
-                lote = []
-                vis = []
-                for idx, row in edited.iterrows():
-                    d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
-                    c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
-                    if d_val > 0 or c_val > 0:
-                        lote.append([
-                            str(fecha), str(doc), str(tercero), str(row['Cuenta']),
-                            str(row['Detalle'] if row['Detalle'] else desc_global),
-                            d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
-                            str(st.session_state.usuario_actual)
-                        ])
-                        vis.append({'Cuenta': row['Cuenta'], 'Detalle': row['Detalle'], 'Debito': d_val, 'Credito': c_val})
-                try:
-                    sheet.append_rows(lote)
-                    st.session_state.ultimo_registro = pd.DataFrame(vis)
-                    st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                with st.spinner("Generando consecutivo y guardando..."):
+                    # 1. Obtener el número automático
+                    nuevo_consecutivo = obtener_siguiente_consecutivo()
+                    
+                    lote = []
+                    vis = []
+                    for idx, row in edited.iterrows():
+                        d_val = 0.0 if pd.isna(row['Debito']) else row['Debito']
+                        c_val = 0.0 if pd.isna(row['Credito']) else row['Credito']
+                        if d_val > 0 or c_val > 0:
+                            # 2. Agregamos el nuevo_consecutivo al principio de la lista
+                            lote.append([
+                                int(nuevo_consecutivo),  # <--- COLUMNA A: ID AUTOMÁTICO
+                                str(fecha), str(doc_ref), str(tercero), str(row['Cuenta']),
+                                str(row['Detalle'] if row['Detalle'] else desc_global),
+                                d_val, c_val, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
+                                str(st.session_state.usuario_actual)
+                            ])
+                            vis.append({'Cuenta': row['Cuenta'], 'Debito': d_val, 'Credito': c_val})
+                    try:
+                        sheet.append_rows(lote)
+                        st.session_state.ultimo_registro = pd.DataFrame(vis)
+                        st.session_state.ultimo_id = nuevo_consecutivo
+                        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
     elif round(deb - cred, 2) != 0:
         st.error(f"❌ Descuadrado por ${deb - cred:,.2f}")
 
 # ==========================================
-# 📊 REPORTES
+# 📂 VER MOVIMIENTOS
 # ==========================================
-elif menu == "📊 Reportes e Impuestos":
-    st.title("Estados Financieros")
-    if st.button("🔄 Actualizar"):
+elif menu == "📂 Histórico":
+    st.title("Histórico de Comprobantes")
+    if st.button("Actualizar"):
         st.cache_data.clear()
         st.rerun()
+    
+    df = cargar_df("Hoja 1")
+    if not df.empty and 'ID_Comprobante' in df.columns:
+        # Ordenamos para ver el último primero
+        df = df.sort_values(by='ID_Comprobante', ascending=False)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.dataframe(df)
+
+# ==========================================
+# 👥 TERCEROS Y REPORTES (SIMPLIFICADO)
+# ==========================================
+elif menu == "👥 Gestión Terceros":
+    st.title("Terceros")
+    with st.form("nt"):
+        nit = st.text_input("NIT")
+        nom = st.text_input("Nombre")
+        if st.form_submit_button("Guardar"):
+            sh = conectar_google("Terceros")
+            sh.append_row([nit, nom, "", "", "Cliente"])
+            st.success("Guardado")
+            st.cache_data.clear()
+
+elif menu == "📊 Reportes":
+    st.title("Reportes")
+    if st.button("🔄"): st.cache_data.clear(); st.rerun()
     df = cargar_df("Hoja 1")
     if not df.empty:
         df['Debito'] = pd.to_numeric(df['Debito'])
         df['Credito'] = pd.to_numeric(df['Credito'])
-        tab1, tab2 = st.tabs(["💰 PyG", "🏛️ Impuestos"])
-        with tab1:
-            pyg = df[df['Cuenta'].astype(str).str.startswith(('4','5','6'))].copy()
-            if not pyg.empty:
-                resumen = pyg.groupby("Cuenta")[["Debito", "Credito"]].sum()
-                resumen['Saldo'] = resumen['Credito'] - resumen['Debito']
-                st.dataframe(resumen, use_container_width=True)
-                st.metric("Resultado Neto", f"${resumen['Saldo'].sum():,.2f}")
-            else:
-                st.info("Sin datos.")
-        with tab2:
-            imp = df[df['Cuenta'].astype(str).str.startswith(('23','24'))].copy()
-            if not imp.empty:
-                resumen_imp = imp.groupby("Cuenta")[["Debito", "Credito"]].sum()
-                resumen_imp['A Pagar'] = resumen_imp['Credito'] - resumen_imp['Debito']
-                st.dataframe(resumen_imp, use_container_width=True)
-            else:
-                st.info("Sin datos.")
-
-# ==========================================
-# 📂 VER MOVIMIENTOS
-# ==========================================
-elif menu == "📂 Ver Movimientos":
-    st.title("Histórico")
-    st.markdown("[Editar en Google Sheets](https://docs.google.com/spreadsheets/)")
-    if st.button("Actualizar"):
-        st.cache_data.clear()
-        st.rerun()
-    st.dataframe(cargar_df("Hoja 1"), use_container_width=True)
-
+        res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
+        st.dataframe(res)
 
 
