@@ -361,6 +361,30 @@ UNIDADES = ["Pesebreras", "Estimulacion Equinoterapia", "Volting", "adiestramien
 "Don Juan y Joshua",
 ]
 # ==========================================
+# ⚙️ CONFIGURACIÓN Y ESTILOS
+# ==========================================
+# Inyectamos CSS para ocultar índices de tablas y mejorar visualización
+st.markdown("""
+    <style>
+    .block-container {padding-top: 1rem; padding-bottom: 5rem;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
+PUC = [
+    "1105 - Caja General", "1110 - Bancos", "1305 - Clientes", 
+    "1355 - Anticipo Impuestos", "1435 - Inventario Semovientes", 
+    "1540 - Flota y Equipo", "2205 - Proveedores", "2335 - Ctas x Pagar", 
+    "2365 - Retefuente", "2408 - IVA Generado", "2409 - IVA Descontable",
+    "3115 - Aportes Sociales", "4135 - Ingresos Ventas", 
+    "5105 - Gastos Personal", "5135 - Servicios", "5195 - Diversos",
+    "5295 - Compra Ganado", "6135 - Costo Ventas"
+]
+CENTROS = ["General", "Administración", "Ventas", "Operativo"]
+UNIDADES = ["General", "Ganadería Cría", "Ganadería Ceba", "Agricultura"]
+
+# ==========================================
 # 🔌 CONEXIÓN
 # ==========================================
 def conectar_google(nombre_hoja):
@@ -403,6 +427,25 @@ def obtener_siguiente_consecutivo():
             return 1
 
 # ==========================================
+# 🧹 FUNCIONES DE LIMPIEZA (CALLBACKS)
+# ==========================================
+def limpiar_asiento():
+    """Borra todos los campos del asiento INMEDIATAMENTE"""
+    st.session_state.doc_asiento = ""
+    st.session_state.desc_asiento = ""
+    # Reiniciamos la tabla
+    st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+    # Opcional: Resetear fecha a hoy
+    st.session_state.fecha_asiento = datetime.now()
+
+def limpiar_tercero():
+    """Borra todos los campos del formulario de terceros"""
+    claves_a_borrar = ["t_nit", "t_dv", "t_razon", "t_nom1", "t_nom2", "t_ape1", "t_ape2", "t_dir", "t_ciu", "t_tel", "t_mail"]
+    for clave in claves_a_borrar:
+        if clave in st.session_state:
+            st.session_state[clave] = ""
+
+# ==========================================
 # 🔐 LOGIN
 # ==========================================
 if 'usuario_actual' not in st.session_state:
@@ -440,7 +483,7 @@ menu = st.sidebar.radio("Navegación",
     ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes", "📂 Histórico"])
 
 # ==========================================
-# 👥 TERCEROS
+# 👥 TERCEROS (CON KEYS Y LIMPIEZA MANUAL)
 # ==========================================
 if menu == "👥 Gestión Terceros":
     st.title("Directorio de Terceros")
@@ -448,10 +491,12 @@ if menu == "👥 Gestión Terceros":
     with st.expander("➕ Crear Nuevo Tercero", expanded=True):
         tipo_persona = st.selectbox("Tipo de Persona", ["Natural", "Jurídica"])
         
-        with st.form("form_tercero", clear_on_submit=True):
+        # Usamos st.form, pero la limpieza la haremos vía callback en el botón
+        with st.form("form_tercero"):
             c1, c2, c3 = st.columns([2, 1, 2])
-            nit = c1.text_input("NIT / Cédula (Sin puntos)")
-            dv = c2.text_input("DV", max_chars=1)
+            # ASIGNAMOS KEYS A TODO PARA PODER BORRARLO
+            nit = c1.text_input("NIT / Cédula", key="t_nit")
+            dv = c2.text_input("DV", max_chars=1, key="t_dv")
             tipo_tercero = c3.selectbox("Clasificación", ["Cliente", "Proveedor", "Empleado", "Socio", "Otro"])
 
             razon_social = ""
@@ -459,29 +504,31 @@ if menu == "👥 Gestión Terceros":
             nombre_visual = ""
             
             if tipo_persona == "Jurídica":
-                razon_social = st.text_input("Razón Social (Nombre Empresa)")
+                razon_social = st.text_input("Razón Social", key="t_razon")
                 nombre_visual = razon_social
             else:
                 st.markdown("**Nombres y Apellidos:**")
                 n1, n2 = st.columns(2)
-                nom1 = n1.text_input("Primer Nombre")
-                nom2 = n2.text_input("Segundo Nombre")
+                nom1 = n1.text_input("Primer Nombre", key="t_nom1")
+                nom2 = n2.text_input("Segundo Nombre", key="t_nom2")
                 a1, a2 = st.columns(2)
-                ape1 = a1.text_input("Primer Apellido")
-                ape2 = a2.text_input("Segundo Apellido")
-                
+                ape1 = a1.text_input("Primer Apellido", key="t_ape1")
+                ape2 = a2.text_input("Segundo Apellido", key="t_ape2")
                 parts = [p for p in [nom1, nom2, ape1, ape2] if p]
                 nombre_visual = " ".join(parts)
 
             st.markdown("---")
             c4, c5 = st.columns(2)
-            direccion = c4.text_input("Dirección")
-            ciudad = c5.text_input("Ciudad / Municipio")
+            direccion = c4.text_input("Dirección", key="t_dir")
+            ciudad = c5.text_input("Ciudad", key="t_ciu")
             c6, c7 = st.columns(2)
-            telefono = c6.text_input("Teléfono")
-            email = c7.text_input("Email")
+            telefono = c6.text_input("Teléfono", key="t_tel")
+            email = c7.text_input("Email", key="t_mail")
             
-            if st.form_submit_button("Guardar Tercero"):
+            # EL BOTÓN DE ENVÍO LLAMA A LA FUNCIÓN DE LIMPIEZA
+            enviado = st.form_submit_button("Guardar Tercero")
+            
+            if enviado:
                 if not nit:
                     st.error("El NIT es obligatorio")
                 else:
@@ -495,56 +542,55 @@ if menu == "👥 Gestión Terceros":
                         ]
                         sheet.append_row(datos)
                         st.success(f"✅ Guardado: {nombre_visual}")
-                        st.cache_data.clear()
+                        # Limpiamos el estado manualmente
+                        limpiar_tercero()
+                        st.rerun()
 
+    # Botón explícito por si acaso
+    if st.button("🔄 Limpiar Formulario / Nuevo Tercero"):
+        limpiar_tercero()
+        st.rerun()
+
+    st.markdown("### Base de Datos")
     df_t = cargar_df("Terceros")
     if not df_t.empty:
         cols = [c for c in ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad'] if c in df_t.columns]
         st.dataframe(df_t[cols], use_container_width=True)
 
 # ==========================================
-# 📝 NUEVO ASIENTO (CORREGIDO)
+# 📝 NUEVO ASIENTO (CON BOTÓN DE NUEVO Y FORMATO)
 # ==========================================
 elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
-    # --- 1. LÓGICA DE LIMPIEZA (AL PRINCIPIO) ---
-    # Esto borra los datos ANTES de dibujar las cajas, evitando el error rojo
-    if 'limpiar_ahora' in st.session_state and st.session_state.limpiar_ahora:
-        st.session_state.doc_asiento = ""
-        st.session_state.desc_asiento = ""
-        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
-        st.session_state.limpiar_ahora = False # Apagamos la bandera
-
-    # Mensaje de éxito del ciclo anterior
-    if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
-        st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado con éxito!")
-        if st.button("Cerrar mensaje"):
-            st.session_state.ultimo_registro = None
-            st.rerun()
-
-    # Carga de terceros
-    df_t = cargar_df("Terceros")
-    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist() if not df_t.empty and 'Nombre_Visual' in df_t.columns else ["Consumidor Final"]
-
-    # --- 2. DIBUJAR LOS CAMPOS (Usando session_state para persistencia) ---
-    c1, c2, c3 = st.columns(3)
-    
-    # Inicializar keys si no existen
+    # Inicialización de variables de sesión
+    if "fecha_asiento" not in st.session_state: st.session_state.fecha_asiento = datetime.now()
     if "doc_asiento" not in st.session_state: st.session_state.doc_asiento = ""
     if "desc_asiento" not in st.session_state: st.session_state.desc_asiento = ""
-
-    fecha = c1.date_input("Fecha", datetime.now())
-    tercero = c2.selectbox("Tercero", lista_terceros)
-    
-    # IMPORTANTE: Aquí asignamos el key para poder borrarlo luego
-    doc_ref = c3.text_input("Doc. Ref", key="doc_asiento")
-    desc_global = st.text_input("Descripción Global", key="desc_asiento")
-
-    # Inicializar Tabla
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
+    # --- MENSAJE DE ÉXITO Y BOTÓN DE NUEVO ---
+    if 'ultimo_id' in st.session_state and st.session_state.ultimo_id is not None:
+        st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado con éxito! El formulario ya está limpio.")
+        col_btn1, col_btn2 = st.columns([1, 4])
+        if col_btn1.button("🆗 Cerrar Aviso"):
+            st.session_state.ultimo_id = None
+            st.rerun()
+        st.markdown("---")
+
+    # Formulario
+    df_t = cargar_df("Terceros")
+    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist() if not df_t.empty and 'Nombre_Visual' in df_t.columns else ["Consumidor Final"]
+
+    c1, c2, c3 = st.columns(3)
+    fecha = c1.date_input("Fecha", key="fecha_asiento")
+    tercero = c2.selectbox("Tercero", lista_terceros)
+    doc_ref = c3.text_input("Doc. Ref", key="doc_asiento")
+    desc_global = st.text_input("Descripción Global", key="desc_asiento")
+
+    # TABLA CON FORMATO DE NÚMEROS
+    # Nota: format="$%.2f" muestra 1,000.00 (formato estándar de dinero)
     col_cfg = {
         "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
         "Detalle": st.column_config.TextColumn("Detalle", width="medium"),
@@ -554,16 +600,20 @@ elif menu == "📝 Nuevo Asiento":
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_final")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v13")
     edited = edited.fillna(0.0)
     deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
+    # Totales
     c1, c2, c3 = st.columns(3)
-    c1.metric("Débito", f"${deb:,.2f}")
-    c2.metric("Crédito", f"${cred:,.2f}")
+    c1.metric("Total Débito", f"${deb:,.2f}")
+    c2.metric("Total Crédito", f"${cred:,.2f}")
     
+    # Botonera de Acción
+    col_save, col_clear = st.columns([2, 1])
+
     if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 GUARDAR Y LIMPIAR", type="primary"):
+        if col_save.button("💾 GUARDAR COMPROBANTE", type="primary", use_container_width=True):
             sheet = conectar_google("Hoja 1")
             if sheet:
                 with st.spinner("Guardando..."):
@@ -582,16 +632,21 @@ elif menu == "📝 Nuevo Asiento":
                     try:
                         sheet.append_rows(lote)
                         
-                        # --- 3. ACTIVAR BANDERA DE LIMPIEZA ---
-                        st.session_state.ultimo_registro = edited
+                        # --- LIMPIEZA TOTAL ---
+                        limpiar_asiento()
                         st.session_state.ultimo_id = nuevo_id
-                        st.session_state.limpiar_ahora = True # <--- ¡ESTA ES LA CLAVE!
-                        st.rerun() # Recargamos para que la limpieza ocurra al inicio
+                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"Error: {e}")
     elif round(deb - cred, 2) != 0:
-        st.error(f"❌ Descuadrado")
+        col_save.error(f"❌ Descuadrado")
+
+    # Botón explícito para limpiar si el usuario se arrepiente a mitad de camino
+    if col_clear.button("🔄 Nuevo / Limpiar", use_container_width=True):
+        limpiar_asiento()
+        st.session_state.ultimo_id = None # Borramos mensaje de éxito también
+        st.rerun()
 
 # ==========================================
 # 📂 HISTÓRICO Y REPORTES
@@ -610,4 +665,4 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         res['Saldo'] = res['Credito'] - res['Debito']
-        st.dataframe(res)
+        st.dataframe(res.style.format("${:,.2f}")) # Formato bonito en reporte
