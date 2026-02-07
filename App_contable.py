@@ -440,22 +440,21 @@ menu = st.sidebar.radio("Navegación",
     ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes", "📂 Histórico"])
 
 # ==========================================
-# 👥 TERCEROS (SEPARADO Y DESPLEGABLE)
+# 👥 TERCEROS (CON AUTO-LIMPIEZA)
 # ==========================================
 if menu == "👥 Gestión Terceros":
     st.title("Directorio de Terceros")
     
     with st.expander("➕ Crear Nuevo Tercero", expanded=True):
-        # 1. LISTA DESPLEGABLE (Lo que pediste)
         tipo_persona = st.selectbox("Tipo de Persona", ["Natural", "Jurídica"])
         
-        with st.form("form_tercero"):
+        # AGREGAMOS clear_on_submit=True PARA LIMPIAR AL GUARDAR
+        with st.form("form_tercero", clear_on_submit=True):
             c1, c2, c3 = st.columns([2, 1, 2])
             nit = c1.text_input("NIT / Cédula (Sin puntos)")
             dv = c2.text_input("DV", max_chars=1)
             tipo_tercero = c3.selectbox("Clasificación", ["Cliente", "Proveedor", "Empleado", "Socio", "Otro"])
 
-            # Variables para guardar
             razon_social = ""
             nom1, nom2, ape1, ape2 = "", "", "", ""
             nombre_visual = ""
@@ -467,12 +466,11 @@ if menu == "👥 Gestión Terceros":
                 st.markdown("**Nombres y Apellidos Separados:**")
                 n1, n2 = st.columns(2)
                 nom1 = n1.text_input("Primer Nombre")
-                nom2 = n2.text_input("Segundo Nombre (Opcional)")
+                nom2 = n2.text_input("Segundo Nombre")
                 a1, a2 = st.columns(2)
                 ape1 = a1.text_input("Primer Apellido")
-                ape2 = a2.text_input("Segundo Apellido (Opcional)")
+                ape2 = a2.text_input("Segundo Apellido")
                 
-                # Armamos el nombre visual para mostrar en la app
                 parts = [p for p in [nom1, nom2, ape1, ape2] if p]
                 nombre_visual = " ".join(parts)
 
@@ -491,77 +489,74 @@ if menu == "👥 Gestión Terceros":
                 else:
                     sheet = conectar_google("Terceros")
                     if sheet:
-                        # Guardamos CADA CAMPO EN SU COLUMNA
                         datos = [
                             str(nit), str(dv), tipo_persona, 
                             razon_social.upper(), 
-                            nom1.upper(), nom2.upper(), ape1.upper(), ape2.upper(), # <--- Separados
+                            nom1.upper(), nom2.upper(), ape1.upper(), ape2.upper(),
                             direccion.upper(), ciudad.upper(), 
                             str(telefono), str(email).lower(), 
                             tipo_tercero,
-                            nombre_visual.upper() # Columna K (Nombre_Visual)
+                            nombre_visual.upper()
                         ]
                         sheet.append_row(datos)
-                        st.success(f"✅ Tercero {nombre_visual} guardado correctamente.")
+                        st.success(f"✅ Tercero guardado. Formulario limpio.")
                         st.cache_data.clear()
-                        st.rerun()
+                        # No hacemos rerun() aquí para permitir que clear_on_submit funcione visualmente
+                        # La próxima vez que toques algo se actualizará la lista de abajo
 
-    # Visualizar lista
     st.markdown("### Base de Datos")
     df_t = cargar_df("Terceros")
     if not df_t.empty:
-        # Mostramos lo más importante
-        cols_mostrar = ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad']
-        # Filtramos solo columnas que existan para evitar errores si no has actualizado el sheet
-        cols_validas = [c for c in cols_mostrar if c in df_t.columns]
+        cols_validas = [c for c in ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad'] if c in df_t.columns]
         st.dataframe(df_t[cols_validas], use_container_width=True)
-    else:
-        st.info("No hay terceros registrados.")
 
 # ==========================================
-# 📝 NUEVO ASIENTO
+# 📝 NUEVO ASIENTO (CON LIMPIEZA TOTAL)
 # ==========================================
 elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
+    # Mensaje de éxito temporal
     if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
-        st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado!")
-        st.dataframe(st.session_state.ultimo_registro)
-        if st.button("Nuevo Registro"):
+        st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado con éxito!")
+        if st.button("Ocultar mensaje"):
             st.session_state.ultimo_registro = None
             st.rerun()
-        st.markdown("---")
 
-    # Cargar terceros
     df_t = cargar_df("Terceros")
-    if df_t.empty:
-        lista_terceros = ["Consumidor Final"]
+    if not df_t.empty and 'Nombre_Visual' in df_t.columns:
+        lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist()
     else:
-        # Usamos la columna 'Nombre_Visual' (La última, Columna N)
-        if 'Nombre_Visual' in df_t.columns:
-            lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist()
-        else:
-            lista_terceros = df_t['NIT'].astype(str).tolist()
+        lista_terceros = ["Consumidor Final"]
 
+    # CABECERA CON LLAVES (KEYS) PARA PODER BORRARLAS
     c1, c2, c3 = st.columns(3)
-    fecha = c1.date_input("Fecha", datetime.now())
-    tercero = c2.selectbox("Tercero", lista_terceros)
-    doc_ref = c3.text_input("Doc. Ref")
-    desc_global = st.text_input("Descripción Global")
+    # Inicializamos si no existen
+    if "fecha_asiento" not in st.session_state: st.session_state.fecha_asiento = datetime.now()
+    if "doc_asiento" not in st.session_state: st.session_state.doc_asiento = ""
+    if "desc_asiento" not in st.session_state: st.session_state.desc_asiento = ""
 
+    fecha = c1.date_input("Fecha", key="fecha_asiento")
+    tercero = c2.selectbox("Tercero", lista_terceros) # El selectbox suele recordar el último, es útil no borrarlo a veces, pero se puede
+    doc_ref = c3.text_input("Doc. Ref", key="doc_asiento")
+    desc_global = st.text_input("Descripción Global", key="desc_asiento")
+
+    # GRID
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
+    # CONFIGURACIÓN DE NÚMEROS MEJORADA
     col_cfg = {
         "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
         "Detalle": st.column_config.TextColumn("Detalle", width="medium"),
-        "Debito": st.column_config.NumberColumn("Débito", format="$%.2f"),
-        "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f"),
+        # format="$%.2f" suele poner comas de miles y punto decimal (Formato Moneda Estandar)
+        "Debito": st.column_config.NumberColumn("Débito", format="$%.2f", min_value=0.0),
+        "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f", min_value=0.0),
         "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS),
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v10")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v11")
     edited = edited.fillna(0.0)
     deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
@@ -570,13 +565,12 @@ elif menu == "📝 Nuevo Asiento":
     c2.metric("Crédito", f"${cred:,.2f}")
     
     if round(deb - cred, 2) == 0 and deb > 0:
-        if st.button("💾 GUARDAR", type="primary"):
+        if st.button("💾 GUARDAR Y LIMPIAR", type="primary"):
             sheet = conectar_google("Hoja 1")
             if sheet:
                 with st.spinner("Guardando..."):
                     nuevo_id = obtener_siguiente_consecutivo()
                     lote = []
-                    vis = []
                     for idx, row in edited.iterrows():
                         d = 0.0 if pd.isna(row['Debito']) else row['Debito']
                         c = 0.0 if pd.isna(row['Credito']) else row['Credito']
@@ -587,12 +581,22 @@ elif menu == "📝 Nuevo Asiento":
                                 d, c, str(row['Centro_Costo']), str(row['Unidad_Negocio']),
                                 str(st.session_state.usuario_actual)
                             ])
-                            vis.append({'Cuenta': row['Cuenta'], 'Debito': d, 'Credito': c})
                     try:
                         sheet.append_rows(lote)
-                        st.session_state.ultimo_registro = pd.DataFrame(vis)
+                        
+                        # --- LIMPIEZA TOTAL DEL FORMULARIO ---
+                        st.session_state.ultimo_registro = edited # Para mostrar resumen si quieres
                         st.session_state.ultimo_id = nuevo_id
+                        
+                        # 1. Resetear Tabla
                         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+                        
+                        # 2. Borrar campos de texto (Usando las keys)
+                        st.session_state.doc_asiento = ""
+                        st.session_state.desc_asiento = ""
+                        # La fecha la dejamos en hoy, o se puede resetear:
+                        st.session_state.fecha_asiento = datetime.now()
+
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
@@ -600,7 +604,7 @@ elif menu == "📝 Nuevo Asiento":
         st.error(f"❌ Descuadrado")
 
 # ==========================================
-# 📊 REPORTES Y HISTÓRICO
+# 📂 HISTÓRICO Y REPORTES
 # ==========================================
 elif menu == "📂 Histórico":
     st.title("Histórico")
@@ -617,5 +621,3 @@ elif menu == "📊 Reportes":
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         res['Saldo'] = res['Credito'] - res['Debito']
         st.dataframe(res)
-
-
