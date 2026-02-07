@@ -440,7 +440,7 @@ menu = st.sidebar.radio("Navegación",
     ["📝 Nuevo Asiento", "👥 Gestión Terceros", "📊 Reportes", "📂 Histórico"])
 
 # ==========================================
-# 👥 TERCEROS (CON AUTO-LIMPIEZA)
+# 👥 TERCEROS
 # ==========================================
 if menu == "👥 Gestión Terceros":
     st.title("Directorio de Terceros")
@@ -448,7 +448,6 @@ if menu == "👥 Gestión Terceros":
     with st.expander("➕ Crear Nuevo Tercero", expanded=True):
         tipo_persona = st.selectbox("Tipo de Persona", ["Natural", "Jurídica"])
         
-        # AGREGAMOS clear_on_submit=True PARA LIMPIAR AL GUARDAR
         with st.form("form_tercero", clear_on_submit=True):
             c1, c2, c3 = st.columns([2, 1, 2])
             nit = c1.text_input("NIT / Cédula (Sin puntos)")
@@ -463,7 +462,7 @@ if menu == "👥 Gestión Terceros":
                 razon_social = st.text_input("Razón Social (Nombre Empresa)")
                 nombre_visual = razon_social
             else:
-                st.markdown("**Nombres y Apellidos Separados:**")
+                st.markdown("**Nombres y Apellidos:**")
                 n1, n2 = st.columns(2)
                 nom1 = n1.text_input("Primer Nombre")
                 nom2 = n2.text_input("Segundo Nombre")
@@ -478,7 +477,6 @@ if menu == "👥 Gestión Terceros":
             c4, c5 = st.columns(2)
             direccion = c4.text_input("Dirección")
             ciudad = c5.text_input("Ciudad / Municipio")
-            
             c6, c7 = st.columns(2)
             telefono = c6.text_input("Teléfono")
             email = c7.text_input("Email")
@@ -490,73 +488,73 @@ if menu == "👥 Gestión Terceros":
                     sheet = conectar_google("Terceros")
                     if sheet:
                         datos = [
-                            str(nit), str(dv), tipo_persona, 
-                            razon_social.upper(), 
+                            str(nit), str(dv), tipo_persona, razon_social.upper(), 
                             nom1.upper(), nom2.upper(), ape1.upper(), ape2.upper(),
-                            direccion.upper(), ciudad.upper(), 
-                            str(telefono), str(email).lower(), 
-                            tipo_tercero,
-                            nombre_visual.upper()
+                            direccion.upper(), ciudad.upper(), str(telefono), str(email).lower(), 
+                            tipo_tercero, nombre_visual.upper()
                         ]
                         sheet.append_row(datos)
-                        st.success(f"✅ Tercero guardado. Formulario limpio.")
+                        st.success(f"✅ Guardado: {nombre_visual}")
                         st.cache_data.clear()
-                        # No hacemos rerun() aquí para permitir que clear_on_submit funcione visualmente
-                        # La próxima vez que toques algo se actualizará la lista de abajo
 
-    st.markdown("### Base de Datos")
     df_t = cargar_df("Terceros")
     if not df_t.empty:
-        cols_validas = [c for c in ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad'] if c in df_t.columns]
-        st.dataframe(df_t[cols_validas], use_container_width=True)
+        cols = [c for c in ['NIT', 'Nombre_Visual', 'Telefono', 'Ciudad'] if c in df_t.columns]
+        st.dataframe(df_t[cols], use_container_width=True)
 
 # ==========================================
-# 📝 NUEVO ASIENTO (CON LIMPIEZA TOTAL)
+# 📝 NUEVO ASIENTO (CORREGIDO)
 # ==========================================
 elif menu == "📝 Nuevo Asiento":
     st.title("📝 Registrar Comprobante")
 
-    # Mensaje de éxito temporal
+    # --- 1. LÓGICA DE LIMPIEZA (AL PRINCIPIO) ---
+    # Esto borra los datos ANTES de dibujar las cajas, evitando el error rojo
+    if 'limpiar_ahora' in st.session_state and st.session_state.limpiar_ahora:
+        st.session_state.doc_asiento = ""
+        st.session_state.desc_asiento = ""
+        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
+        st.session_state.limpiar_ahora = False # Apagamos la bandera
+
+    # Mensaje de éxito del ciclo anterior
     if 'ultimo_registro' in st.session_state and st.session_state.ultimo_registro is not None:
         st.success(f"✅ ¡Comprobante #{st.session_state.ultimo_id} guardado con éxito!")
-        if st.button("Ocultar mensaje"):
+        if st.button("Cerrar mensaje"):
             st.session_state.ultimo_registro = None
             st.rerun()
 
+    # Carga de terceros
     df_t = cargar_df("Terceros")
-    if not df_t.empty and 'Nombre_Visual' in df_t.columns:
-        lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist()
-    else:
-        lista_terceros = ["Consumidor Final"]
+    lista_terceros = (df_t['NIT'].astype(str) + " - " + df_t['Nombre_Visual']).tolist() if not df_t.empty and 'Nombre_Visual' in df_t.columns else ["Consumidor Final"]
 
-    # CABECERA CON LLAVES (KEYS) PARA PODER BORRARLAS
+    # --- 2. DIBUJAR LOS CAMPOS (Usando session_state para persistencia) ---
     c1, c2, c3 = st.columns(3)
-    # Inicializamos si no existen
-    if "fecha_asiento" not in st.session_state: st.session_state.fecha_asiento = datetime.now()
+    
+    # Inicializar keys si no existen
     if "doc_asiento" not in st.session_state: st.session_state.doc_asiento = ""
     if "desc_asiento" not in st.session_state: st.session_state.desc_asiento = ""
 
-    fecha = c1.date_input("Fecha", key="fecha_asiento")
-    tercero = c2.selectbox("Tercero", lista_terceros) # El selectbox suele recordar el último, es útil no borrarlo a veces, pero se puede
+    fecha = c1.date_input("Fecha", datetime.now())
+    tercero = c2.selectbox("Tercero", lista_terceros)
+    
+    # IMPORTANTE: Aquí asignamos el key para poder borrarlo luego
     doc_ref = c3.text_input("Doc. Ref", key="doc_asiento")
     desc_global = st.text_input("Descripción Global", key="desc_asiento")
 
-    # GRID
+    # Inicializar Tabla
     if 'df_asiento' not in st.session_state:
         st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
 
-    # CONFIGURACIÓN DE NÚMEROS MEJORADA
     col_cfg = {
         "Cuenta": st.column_config.SelectboxColumn("Cuenta", options=PUC, width="large"),
         "Detalle": st.column_config.TextColumn("Detalle", width="medium"),
-        # format="$%.2f" suele poner comas de miles y punto decimal (Formato Moneda Estandar)
         "Debito": st.column_config.NumberColumn("Débito", format="$%.2f", min_value=0.0),
         "Credito": st.column_config.NumberColumn("Crédito", format="$%.2f", min_value=0.0),
         "Centro_Costo": st.column_config.SelectboxColumn("C. Costo", options=CENTROS),
         "Unidad_Negocio": st.column_config.SelectboxColumn("U. Negocio", options=UNIDADES),
     }
 
-    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_v11")
+    edited = st.data_editor(st.session_state.df_asiento, num_rows="dynamic", column_config=col_cfg, use_container_width=True, key="grid_final")
     edited = edited.fillna(0.0)
     deb, cred = edited['Debito'].sum(), edited['Credito'].sum()
     
@@ -584,20 +582,12 @@ elif menu == "📝 Nuevo Asiento":
                     try:
                         sheet.append_rows(lote)
                         
-                        # --- LIMPIEZA TOTAL DEL FORMULARIO ---
-                        st.session_state.ultimo_registro = edited # Para mostrar resumen si quieres
+                        # --- 3. ACTIVAR BANDERA DE LIMPIEZA ---
+                        st.session_state.ultimo_registro = edited
                         st.session_state.ultimo_id = nuevo_id
+                        st.session_state.limpiar_ahora = True # <--- ¡ESTA ES LA CLAVE!
+                        st.rerun() # Recargamos para que la limpieza ocurra al inicio
                         
-                        # 1. Resetear Tabla
-                        st.session_state.df_asiento = pd.DataFrame([{'Cuenta': PUC[0], 'Detalle': '', 'Debito': 0.0, 'Credito': 0.0, 'Centro_Costo': CENTROS[0], 'Unidad_Negocio': UNIDADES[0]}])
-                        
-                        # 2. Borrar campos de texto (Usando las keys)
-                        st.session_state.doc_asiento = ""
-                        st.session_state.desc_asiento = ""
-                        # La fecha la dejamos en hoy, o se puede resetear:
-                        st.session_state.fecha_asiento = datetime.now()
-
-                        st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
     elif round(deb - cred, 2) != 0:
