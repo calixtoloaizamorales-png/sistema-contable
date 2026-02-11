@@ -363,6 +363,7 @@ UNIDADES = ["Pesebreras", "Estimulacion Equinoterapia", "Volting", "adiestramien
 "Tagua ",
 "Vampiro ",
 "Don Juan y Joshua",
+            "Tienda",
 ]
 
 # ==========================================
@@ -647,6 +648,7 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         st.dataframe(res.style.format("${:,.2f}"))
+
 
 
 
