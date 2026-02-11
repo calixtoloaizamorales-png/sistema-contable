@@ -271,7 +271,7 @@ PUC = [
 "52454002 - Camión"  ,	
 "52454003 - Montacargas"  ,	
 "52454004 - Motos"  ,	
-"52454099 - Otros"  ,	
+"52454099 - Inv Gaseosas"  ,	
 "52501501 - Reparaciones locativas"  ,	
 "52509501 - Otras adecuaciones"  ,	
 "52509502 - Copias de Llaves"  ,	
@@ -647,6 +647,7 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         st.dataframe(res.style.format("${:,.2f}"))
+
 
 
 
