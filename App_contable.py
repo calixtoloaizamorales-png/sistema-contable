@@ -193,7 +193,7 @@ PUC = [
 "51451501 - Maquinaria y equipo"  ,	
 "51452001 - Equipo de oficina"  ,	
 "51452501 - Equipo de computación"  ,	
-"51452502 - Impresoras"  ,	
+"51452502 - Inventarios Gaseosa"  ,	
 "51454001 - Mantenimiento de Vehiculos"  ,	
 "51454002 - Revisión Técnico Mecánica"  ,	
 "51500501 - Instalaciones Eléctricas"  ,	
@@ -647,5 +647,6 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         st.dataframe(res.style.format("${:,.2f}"))
+
 
 
