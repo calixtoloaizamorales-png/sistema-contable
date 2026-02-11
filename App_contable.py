@@ -42,7 +42,7 @@ PUC = [
 "14350101 - Mercancia gravada"  ,	
 "14350102 - Mercancía exenta"  ,	
 "14350103 - Mercancía excluida"  ,	
-"14350803 - Combustible Gas Propano"  ,	
+"14350803 - Gaseosa"  ,	
 "14550101 - Herramientas"  ,	
 "14550102 - Dotación EPP"  ,	
 "14550103 - Dotación Uniformes"  ,	
@@ -647,4 +647,5 @@ elif menu == "📊 Reportes":
         df['Credito'] = pd.to_numeric(df['Credito'])
         res = df.groupby("Cuenta")[["Debito", "Credito"]].sum()
         st.dataframe(res.style.format("${:,.2f}"))
+
 
